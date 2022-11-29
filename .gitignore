@@ -1,4 +1,10 @@
-#######################
+# TécnicoFS ignores
+tests/*
+!tests/*.c
+!tests/*.h
+!tests/*.txt
+
+######################
 # C Ignores
 ######################
 # https://github.com/github/gitignore/blob/master/C.gitignore
@@ -446,6 +452,3 @@ TSWLatexianTemp*
 
 # old files folder
 _old
-
-# src files
-src/test
