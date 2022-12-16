@@ -94,6 +94,24 @@ int tfs_open(char const *name, tfs_file_mode_t mode) {
         ALWAYS_ASSERT(inode != NULL,
                       "tfs_open: directory files must have an inode");
 
+        if (inode->i_node_type == T_LINK) {
+            // cannot create link with create flag
+            if(mode & TFS_O_CREAT) {
+                return -1;
+            }
+            void *block = data_block_get(inode->i_data_block);
+
+            char buffer[MAX_FILE_NAME];
+            memcpy(buffer, block, strlen((char *)block) + 1);
+
+            inum = tfs_lookup(buffer, root_dir_inode);
+            // dangled link
+            if (inum == -1) {
+                return -1;
+            }
+            inode = inode_get(inum);
+        }
+
         // Truncate (if requested)
         if (mode & TFS_O_TRUNC) {
             if (inode->i_size > 0) {
@@ -136,25 +154,63 @@ int tfs_open(char const *name, tfs_file_mode_t mode) {
 }
 
 int tfs_sym_link(char const *target, char const *link_name) {
-    (void)target;
-    (void)link_name;
-    // ^ this is a trick to keep the compiler from complaining about unused
-    // variables. TODO: remove
-
-    PANIC("TODO: tfs_sym_link");
-}
-
-int tfs_link(char const *target, char const *link_name) {
     inode_t *root_dir_inode = inode_get(ROOT_DIR_INUM);
 
+    // check if target exists 
     int target_inumber = tfs_lookup(target, root_dir_inode);
-    // target doesn't exist
     if (target_inumber == -1) {
         return -1;
     }
 
-    // a file with link name already exists
+    // check if a file with given name already exists
     if (tfs_lookup(link_name, root_dir_inode) != -1) {
+        return -1;
+    }
+
+    int new_inum = inode_create(T_LINK);
+    // no space in inode table
+    if (new_inum == -1) {
+        return -1;
+    }
+
+    inode_t *new_inode = inode_get(new_inum);
+
+    int new_bnum = data_block_alloc();
+    // no free blocks
+    if (new_bnum == -1) {
+        inode_delete(new_inum);
+        return -1;
+    }
+
+    void *block = data_block_get(new_bnum);
+    memcpy(block, target, strlen(target) + 1);
+
+    new_inode->i_data_block = new_bnum;
+
+    if (add_dir_entry(root_dir_inode, link_name + 1, new_inum) == -1) {
+        return -1;
+    }
+
+    return 0;
+}
+
+int tfs_link(char const *target, char const *link_name) {
+    // root directory inode
+    inode_t *root_dir_inode = inode_get(ROOT_DIR_INUM);
+
+    // check if target exists 
+    int target_inumber = tfs_lookup(target, root_dir_inode);
+    if (target_inumber == -1) {
+        return -1;
+    }
+
+    // check if a file with given name already exists
+    if (tfs_lookup(link_name, root_dir_inode) != -1) {
+        return -1;
+    }
+
+    // cannot hardlink to a symlink
+    if (inode_get(target_inumber)->i_node_type == T_LINK) {
         return -1;
     }
 
@@ -163,7 +219,9 @@ int tfs_link(char const *target, char const *link_name) {
         return -1;
     }
 
-    // TODO add link counter to inode
+    // increment inode links counter
+    inode_t *inode = inode_get(target_inumber); 
+    inode->i_links_count++;
 
     return 0;
 }
@@ -252,36 +310,48 @@ ssize_t tfs_read(int fhandle, void *buffer, size_t len) {
 }
 
 int tfs_unlink(char const *target) {
-    (void)target;
-    // ^ this is a trick to keep the compiler from complaining about unused
-    // variables. TODO: remove
+    inode_t *root_dir_inode = inode_get(ROOT_DIR_INUM);
 
-    PANIC("TODO: tfs_unlink");
+    int target_inum = tfs_lookup(target, root_dir_inode);
+    // target doesn't exist or has invalid name
+    if (target_inum == -1) {
+        return -1;
+    }
+
+    // remove dir entry
+    if (clear_dir_entry(root_dir_inode, target + 1) == - 1) {
+        return -1;
+    }
+
+    inode_t *target_inode = inode_get(target_inum);
+    if (target_inode->i_links_count == 1) {
+        if (target_inode->i_data_block != -1) {
+            data_block_free(target_inode->i_data_block);
+        }
+        inode_delete(target_inum);
+    } else {
+        target_inode->i_links_count--;
+    }
+
+    return 0;
 }
 
 int tfs_copy_from_external_fs(char const *source_path, char const *dest_path) {
     FILE *f = fopen(source_path, "r");
-    if (f == NULL)
+    if (f == NULL) {
         return -1;
+    }
 
     // buffer with 1025 bytes == block size + 1
     char buffer[BLOCK_SIZE + 1];
-
     // read entire block size
     size_t bytes_read = fread(buffer, sizeof(*buffer), BLOCK_SIZE + 1, f);
-    // problem reading the file
-    if (bytes_read == -1) {
-        fclose(f);
-        return -1;
-        // file being copied into tfs exceeds 1KB limit size of a tfs file
-    } else if (bytes_read == BLOCK_SIZE + 1) {
+    // problem reading the file or file size exceeds tfs block limit
+    if (bytes_read == -1 || bytes_read == BLOCK_SIZE + 1) {
         fclose(f);
         return -1;
     }
 
-    if (fclose(f) == -1) {
-        return -1;
-    }
 
     // redirect data to tfs
     int dest = tfs_open(dest_path, TFS_O_TRUNC | TFS_O_CREAT);
@@ -295,7 +365,8 @@ int tfs_copy_from_external_fs(char const *source_path, char const *dest_path) {
         return -1;
     }
 
-    if (tfs_close(dest) == -1) {
+    // operations handled, just signal problem with closing files
+    if (fclose(f) == -1 || tfs_close(dest == -1)) {
         return -1;
     }
 
