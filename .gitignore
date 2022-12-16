@@ -1,3 +1,6 @@
+# Custom ignores
+.vscode/
+
 # TécnicoFS ignores
 tests/*
 !tests/*.c

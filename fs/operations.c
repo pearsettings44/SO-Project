@@ -1,12 +1,15 @@
 #include "operations.h"
 #include "config.h"
 #include "state.h"
+#include <fcntl.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "betterassert.h"
+
+#define BLOCK_SIZE state_block_size()
 
 tfs_params tfs_default_params() {
     tfs_params params = {
@@ -142,12 +145,27 @@ int tfs_sym_link(char const *target, char const *link_name) {
 }
 
 int tfs_link(char const *target, char const *link_name) {
-    (void)target;
-    (void)link_name;
-    // ^ this is a trick to keep the compiler from complaining about unused
-    // variables. TODO: remove
+    inode_t *root_dir_inode = inode_get(ROOT_DIR_INUM);
 
-    PANIC("TODO: tfs_link");
+    int target_inumber = tfs_lookup(target, root_dir_inode);
+    // target doesn't exist
+    if (target_inumber == -1) {
+        return -1;
+    }
+
+    // a file with link name already exists
+    if (tfs_lookup(link_name, root_dir_inode) != -1) {
+        return -1;
+    }
+
+    // add link to dir entry
+    if (add_dir_entry(root_dir_inode, link_name + 1, target_inumber) == -1) {
+        return -1;
+    }
+
+    // TODO add link counter to inode
+
+    return 0;
 }
 
 int tfs_close(int fhandle) {
@@ -242,10 +260,44 @@ int tfs_unlink(char const *target) {
 }
 
 int tfs_copy_from_external_fs(char const *source_path, char const *dest_path) {
-    (void)source_path;
-    (void)dest_path;
-    // ^ this is a trick to keep the compiler from complaining about unused
-    // variables. TODO: remove
+    FILE *f = fopen(source_path, "r");
+    if (f == NULL)
+        return -1;
 
-    PANIC("TODO: tfs_copy_from_external_fs");
+    // buffer with 1025 bytes == block size + 1
+    char buffer[BLOCK_SIZE + 1];
+
+    // read entire block size
+    size_t bytes_read = fread(buffer, sizeof(*buffer), BLOCK_SIZE + 1, f);
+    // problem reading the file
+    if (bytes_read == -1) {
+        fclose(f);
+        return -1;
+        // file being copied into tfs exceeds 1KB limit size of a tfs file
+    } else if (bytes_read == BLOCK_SIZE + 1) {
+        fclose(f);
+        return -1;
+    }
+
+    if (fclose(f) == -1) {
+        return -1;
+    }
+
+    // redirect data to tfs
+    int dest = tfs_open(dest_path, TFS_O_TRUNC | TFS_O_CREAT);
+    if (dest == -1) {
+        return -1;
+    }
+
+    ssize_t r = tfs_write(dest, buffer, bytes_read);
+    if (r == -1) {
+        tfs_close(dest);
+        return -1;
+    }
+
+    if (tfs_close(dest) == -1) {
+        return -1;
+    }
+
+    return 0;
 }
