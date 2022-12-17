@@ -215,7 +215,7 @@ int inode_create(inode_type i_type) {
             // ensure fields are initialized
             inode->i_size = 0;
             inode->i_data_block = -1;
-            
+
             // run regular deletion process
             inode_delete(inumber);
             return -1;
@@ -238,7 +238,8 @@ int inode_create(inode_type i_type) {
         inode_table[inumber].i_data_block = -1;
         break;
     case T_LINK:
-        inode_table[inumber].i_size = BLOCK_SIZE;
+        // Size unused because no read and write operations in link type files
+        inode_table[inumber].i_size = 0;
         inode_table[inumber].i_data_block = -1;
         break;
     default:
@@ -280,7 +281,7 @@ void inode_delete(int inumber) {
  * Returns pointer to inode.
  */
 inode_t *inode_get(int inumber) {
-    ALWAYS_ASSERT(valid_inumber(inumber), "inode_get: invalid inumber");
+    ALWAYS_SSERT(valid_inumber(inumber), "inode_get: invalid inumber");
 
     insert_delay(); // simulate storage access delay to inode
     return &inode_table[inumber];
@@ -301,9 +302,10 @@ inode_t *inode_get(int inumber) {
  */
 int clear_dir_entry(inode_t *inode, char const *sub_name) {
     insert_delay();
+    // if not a directory
     if (inode->i_node_type != T_DIRECTORY) {
-        return -1; // not a directory
-   }
+        return -1;
+    }
 
     // Locates the block containing the entries of the directory
     dir_entry_t *dir_entry = (dir_entry_t *)data_block_get(inode->i_data_block);
