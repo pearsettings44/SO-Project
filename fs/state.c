@@ -281,7 +281,7 @@ void inode_delete(int inumber) {
  * Returns pointer to inode.
  */
 inode_t *inode_get(int inumber) {
-    ALWAYS_SSERT(valid_inumber(inumber), "inode_get: invalid inumber");
+    ALWAYS_ASSERT(valid_inumber(inumber), "inode_get: invalid inumber");
 
     insert_delay(); // simulate storage access delay to inode
     return &inode_table[inumber];
