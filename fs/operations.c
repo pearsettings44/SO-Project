@@ -164,8 +164,8 @@ int tfs_sym_link(char const *target, char const *link_name) {
     // root directory inode
     inode_t *root_dir_inode = inode_get(ROOT_DIR_INUM);
 
-    int target_inumber = tfs_lookup(target, root_dir_inode);
     // check if target exists
+    int target_inumber = tfs_lookup(target, root_dir_inode);
     if (target_inumber == -1) {
         return -1;
     }
@@ -192,7 +192,7 @@ int tfs_sym_link(char const *target, char const *link_name) {
         return -1;
     }
 
-    // block reference
+    // get block pointer
     void *block = data_block_get(new_bnum);
     // copy target path into block
     memcpy(block, target, strlen(target) + 1);
@@ -242,18 +242,22 @@ int tfs_link(char const *target, char const *link_name) {
 }
 
 int tfs_close(int fhandle) {
+    // Get the open file table entry
     open_file_entry_t *file = get_open_file_entry(fhandle);
+    // If the file is not open, return an error
     if (file == NULL) {
-        return -1; // invalid fd
+        return -1;
     }
-
+    // If the file is open, remove it from the open file table
     remove_from_open_file_table(fhandle);
 
     return 0;
 }
 
 ssize_t tfs_write(int fhandle, void const *buffer, size_t to_write) {
+    // Get the open file table entry
     open_file_entry_t *file = get_open_file_entry(fhandle);
+    // If the file is not open, return an error
     if (file == NULL) {
         return -1;
     }
@@ -296,7 +300,9 @@ ssize_t tfs_write(int fhandle, void const *buffer, size_t to_write) {
 }
 
 ssize_t tfs_read(int fhandle, void *buffer, size_t len) {
+    // Get the open file table entry
     open_file_entry_t *file = get_open_file_entry(fhandle);
+    // If the file is not open, return an error
     if (file == NULL) {
         return -1;
     }
