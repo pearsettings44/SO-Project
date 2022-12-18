@@ -206,6 +206,7 @@ int inode_create(inode_type i_type) {
 
     inode->i_node_type = i_type;
     inode->i_links_count = 1;
+    pthread_rwlock_init(&inode->block_lock, NULL);
     switch (i_type) {
     case T_DIRECTORY: {
         // Initializes directory (filling its block with empty entries, labeled
@@ -521,4 +522,28 @@ open_file_entry_t *get_open_file_entry(int fhandle) {
     }
 
     return &open_file_table[fhandle];
+}
+
+/**
+ * Determine if given inumber is in the open file table
+ * 
+ * Input:
+ *   - inumber: inumber of inode to be searched for in open file table
+ * 
+ * Returns true if given inumber is present in open file table and, if not,
+ * returns false.
+*/
+bool is_in_open_file_table(int inumber) {
+    ALWAYS_ASSERT(valid_inumber(inumber), 
+                    "is_in_open_file_table: invalid inumber");
+
+    for (int i = 0; i < MAX_OPEN_FILES; ++i) {
+        if (free_open_file_entries[i] == TAKEN) {
+            if (open_file_table[i].of_inumber == inumber) {
+                return true;
+            }
+        }
+    }
+
+    return false;
 }

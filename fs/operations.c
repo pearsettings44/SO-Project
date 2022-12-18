@@ -109,14 +109,13 @@ int tfs_open(char const *name, tfs_file_mode_t mode) {
             char buffer[MAX_FILE_NAME];
             memcpy(buffer, block, strlen((char *)block) + 1);
 
-            // update inum to pointed file's inum
-            inum = tfs_lookup(buffer, root_dir_inode);
+            int fd = tfs_open(buffer, mode);
             // if dangled link
-            if (inum == -1) {
+            if (fd == - 1) {
                 return -1;
             }
-            // update inode to pointed file's inode
-            inode = inode_get(inum);
+
+            return fd;
         }
 
         // Truncate (if requested)
@@ -165,12 +164,12 @@ int tfs_sym_link(char const *target, char const *link_name) {
     inode_t *root_dir_inode = inode_get(ROOT_DIR_INUM);
 
     int target_inumber = tfs_lookup(target, root_dir_inode);
-    // check if target exists
+    // target doesn't exist
     if (target_inumber == -1) {
         return -1;
     }
 
-    // check if a file with link_name already exists
+    // check if a file with link_name already exists and if link_name is valid 
     if (tfs_lookup(link_name, root_dir_inode) != -1) {
         return -1;
     }
@@ -214,18 +213,18 @@ int tfs_link(char const *target, char const *link_name) {
     // root directory inode
     inode_t *root_dir_inode = inode_get(ROOT_DIR_INUM);
 
-    // check if target exists
     int target_inumber = tfs_lookup(target, root_dir_inode);
+    // target doesn't exist
     if (target_inumber == -1) {
         return -1;
     }
 
-    // check if a file with link_name already exists
+    // check if a file with link_name already exists and if link_name is valid
     if (tfs_lookup(link_name, root_dir_inode) != -1) {
         return -1;
     }
 
-    // cannot hardlink to a symlink (breaks POSIX API)
+    // cannot hardlink to symlink (stated in paper)
     if (inode_get(target_inumber)->i_node_type == T_LINK) {
         return -1;
     }
@@ -262,6 +261,10 @@ ssize_t tfs_write(int fhandle, void const *buffer, size_t to_write) {
     inode_t *inode = inode_get(file->of_inumber);
     ALWAYS_ASSERT(inode != NULL, "tfs_write: inode of open file deleted");
 
+    // critical section
+    if (pthread_rwlock_wrlock(&inode->block_lock) != 0) {
+        exit(EXIT_FAILURE);
+    }
     // Determine how many bytes to write
     size_t block_size = state_block_size();
     if (to_write + file->of_offset > block_size) {
@@ -273,6 +276,7 @@ ssize_t tfs_write(int fhandle, void const *buffer, size_t to_write) {
             // If empty file, allocate new block
             int bnum = data_block_alloc();
             if (bnum == -1) {
+                pthread_rwlock_unlock(&inode->block_lock);
                 return -1; // no space
             }
 
@@ -280,7 +284,9 @@ ssize_t tfs_write(int fhandle, void const *buffer, size_t to_write) {
         }
 
         void *block = data_block_get(inode->i_data_block);
-        ALWAYS_ASSERT(block != NULL, "tfs_write: data block deleted mid-write");
+        // rwlock solves this issue
+        ALWAYS_ASSERT(block != NULL, 
+                        "tfs_write: data block deleted mid-write");
 
         // Perform the actual write
         memcpy(block + file->of_offset, buffer, to_write);
@@ -289,6 +295,10 @@ ssize_t tfs_write(int fhandle, void const *buffer, size_t to_write) {
         file->of_offset += to_write;
         if (file->of_offset > inode->i_size) {
             inode->i_size = file->of_offset;
+        }
+
+        if (pthread_rwlock_unlock(&inode->block_lock) != 0) {
+            exit(EXIT_FAILURE);
         }
     }
 
@@ -333,20 +343,26 @@ int tfs_unlink(char const *target) {
     if (target_inum == -1) {
         return -1;
     }
+    
+    // get target's inode
+    inode_t *target_inode = inode_get(target_inum);
 
-    // remove target entry
+    // if file is opened, do not allow unlink 
+    // symlinks are never in the open file table
+    if ((target_inode->i_node_type != T_LINK) && 
+        (is_in_open_file_table(target_inum))) {
+        return -1;
+    }
+
+    // remove target entry in directory
     if (clear_dir_entry(root_dir_inode, target + 1) == -1) {
         return -1;
     }
 
-    inode_t *target_inode = inode_get(target_inum);
     // if no no more links, free inode
     if (target_inode->i_links_count == 1) {
-        // if inode has data on associated block, free block
-        if (target_inode->i_data_block != -1) {
-            data_block_free(target_inode->i_data_block);
-        }
         inode_delete(target_inum);
+        // NOTE: inode_delete handles inode's block 
     } else {
         target_inode->i_links_count--;
     }
