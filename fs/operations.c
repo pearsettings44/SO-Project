@@ -160,6 +160,11 @@ int tfs_open(char const *name, tfs_file_mode_t mode) {
 }
 
 int tfs_sym_link(char const *target, char const *link_name) {
+    // check if link_name is valid
+    if (!is_valid_pathname(link_name)) {
+        return -1;
+    }
+
     // root directory inode
     inode_t *root_dir_inode = inode_get(ROOT_DIR_INUM);
 
@@ -169,7 +174,7 @@ int tfs_sym_link(char const *target, char const *link_name) {
         return -1;
     }
 
-    // check if a file with link_name already exists and if link_name is valid 
+    // check if a file with link_name already exists 
     if (tfs_lookup(link_name, root_dir_inode) != -1) {
         return -1;
     }
@@ -210,6 +215,11 @@ int tfs_sym_link(char const *target, char const *link_name) {
 }
 
 int tfs_link(char const *target, char const *link_name) {
+    // check if link_name is valid
+    if (!is_valid_pathname(link_name)) {
+        return -1;
+    }
+
     // root directory inode
     inode_t *root_dir_inode = inode_get(ROOT_DIR_INUM);
 
@@ -219,7 +229,7 @@ int tfs_link(char const *target, char const *link_name) {
         return -1;
     }
 
-    // check if a file with link_name already exists and if link_name is valid
+    // check if a file with link_name already exists
     if (tfs_lookup(link_name, root_dir_inode) != -1) {
         return -1;
     }
@@ -394,21 +404,21 @@ int tfs_copy_from_external_fs(char const *source_path, char const *dest_path) {
     }
 
     // redirect data to tfs
-    int dest = tfs_open(dest_path, TFS_O_TRUNC | TFS_O_CREAT);
+    int fd = tfs_open(dest_path, TFS_O_TRUNC | TFS_O_CREAT);
     // problem opening dest file in tfs
-    if (dest == -1) {
+    if (fd == -1) {
         return -1;
     }
     // write to tfs
-    ssize_t r = tfs_write(dest, buffer, bytes_read);
+    ssize_t bytes_size = tfs_write(fd, buffer, bytes_read);
     // problem writing to dest file in tfs
-    if (r == -1) {
-        tfs_close(dest);
+    if (bytes_size == -1) {
+        tfs_close(fd);
         return -1;
     }
 
     // operations handled, just signals problems on closing files
-    if (fclose(file) == EOF || tfs_close(dest) == -1) {
+    if (fclose(file) == EOF || tfs_close(fd) == -1) {
         return -1;
     }
 
