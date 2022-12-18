@@ -161,7 +161,7 @@ int tfs_open(char const *name, tfs_file_mode_t mode) {
 
 int tfs_sym_link(char const *target, char const *link_name) {
     // check if link_name is valid
-    if (!is_valid_pathname(link_name)) {
+    if (!valid_pathname(link_name)) {
         return -1;
     }
 
@@ -216,7 +216,7 @@ int tfs_sym_link(char const *target, char const *link_name) {
 
 int tfs_link(char const *target, char const *link_name) {
     // check if link_name is valid
-    if (!is_valid_pathname(link_name)) {
+    if (!valid_pathname(link_name)) {
         return -1;
     }
 
