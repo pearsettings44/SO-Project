@@ -163,8 +163,8 @@ int tfs_sym_link(char const *target, char const *link_name) {
     // root directory inode
     inode_t *root_dir_inode = inode_get(ROOT_DIR_INUM);
 
+    // check if target exists
     int target_inumber = tfs_lookup(target, root_dir_inode);
-    // target doesn't exist
     if (target_inumber == -1) {
         return -1;
     }
@@ -191,7 +191,7 @@ int tfs_sym_link(char const *target, char const *link_name) {
         return -1;
     }
 
-    // block reference
+    // get block pointer
     void *block = data_block_get(new_bnum);
     // copy target path into block
     memcpy(block, target, strlen(target) + 1);
@@ -241,18 +241,22 @@ int tfs_link(char const *target, char const *link_name) {
 }
 
 int tfs_close(int fhandle) {
+    // Get the open file table entry
     open_file_entry_t *file = get_open_file_entry(fhandle);
+    // If the file is not open, return an error
     if (file == NULL) {
-        return -1; // invalid fd
+        return -1;
     }
-
+    // If the file is open, remove it from the open file table
     remove_from_open_file_table(fhandle);
 
     return 0;
 }
 
 ssize_t tfs_write(int fhandle, void const *buffer, size_t to_write) {
+    // Get the open file table entry
     open_file_entry_t *file = get_open_file_entry(fhandle);
+    // If the file is not open, return an error
     if (file == NULL) {
         return -1;
     }
@@ -306,7 +310,9 @@ ssize_t tfs_write(int fhandle, void const *buffer, size_t to_write) {
 }
 
 ssize_t tfs_read(int fhandle, void *buffer, size_t len) {
+    // Get the open file table entry
     open_file_entry_t *file = get_open_file_entry(fhandle);
+    // If the file is not open, return an error
     if (file == NULL) {
         return -1;
     }
@@ -371,27 +377,28 @@ int tfs_unlink(char const *target) {
 }
 
 int tfs_copy_from_external_fs(char const *source_path, char const *dest_path) {
+    // open source file
     FILE *file = fopen(source_path, "r");
+    // problem opening source file
     if (file == NULL) {
         return -1;
     }
-
     // buffer with 1025 bytes == block size + 1
     char buffer[BLOCK_SIZE + 1];
     // read entire block size
     size_t bytes_read = fread(buffer, sizeof(*buffer), BLOCK_SIZE + 1, file);
     // problem reading the file or file size exceeds tfs block limit
-    if (bytes_read == -1 || bytes_read == BLOCK_SIZE + 1) {
+    if (bytes_read == -1 || bytes_read > BLOCK_SIZE) {
         fclose(file);
         return -1;
     }
 
     // redirect data to tfs
     int dest = tfs_open(dest_path, TFS_O_TRUNC | TFS_O_CREAT);
+    // problem opening dest file in tfs
     if (dest == -1) {
         return -1;
     }
-
     // write to tfs
     ssize_t r = tfs_write(dest, buffer, bytes_read);
     // problem writing to dest file in tfs
@@ -401,7 +408,7 @@ int tfs_copy_from_external_fs(char const *source_path, char const *dest_path) {
     }
 
     // operations handled, just signals problems on closing files
-    if (fclose(file) == -1 || tfs_close(dest == -1)) {
+    if (fclose(file) == EOF || tfs_close(dest) == -1) {
         return -1;
     }
 
