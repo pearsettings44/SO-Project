@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/types.h>
+#include <pthread.h>
 
 /**
  * Directory entry
@@ -45,19 +46,23 @@ int state_destroy(void);
 size_t state_block_size(void);
 
 int inode_create(inode_type n_type);
-void inode_delete(int inumber);
+int inode_delete(int inumber);
 inode_t *inode_get(int inumber);
+
+pthread_rwlock_t *inode_rwl_get(int inumber);
 
 int clear_dir_entry(inode_t *inode, char const *sub_name);
 int add_dir_entry(inode_t *inode, char const *sub_name, int sub_inumber);
-int find_in_dir(inode_t const *inode, char const *sub_name);
+int find_in_dir(inode_t *inode, char const *sub_name);
 
 int data_block_alloc(void);
-void data_block_free(int block_number);
+int data_block_free(int block_number);
 void *data_block_get(int block_number);
 
 int add_to_open_file_table(int inumber, size_t offset);
-void remove_from_open_file_table(int fhandle);
+int remove_from_open_file_table(int fhandle);
 open_file_entry_t *get_open_file_entry(int fhandle);
+
+bool is_in_open_file_table(int inumber);
 
 #endif // STATE_H
