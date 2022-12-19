@@ -26,7 +26,7 @@ CFLAGS += -std=c17 -D_POSIX_C_SOURCE=200809L
 CFLAGS += $(INCLUDES)
 
 # Warnings
-CFLAGS += -fdiagnostics-color=always -Wall -Werror -Wextra -Wcast-align -Wconversion -Wfloat-equal -Wformat=2 -Wnull-dereference -Wshadow -Wsign-conversion -Wswitch-default -Wswitch-enum -Wundef -Wunreachable-code -Wunused -g -fsanitize=undefined
+CFLAGS += -fdiagnostics-color=always -Wall -Werror -Wextra -Wcast-align -Wconversion -Wfloat-equal -Wformat=2 -Wnull-dereference -Wshadow -Wsign-conversion -Wswitch-default -Wswitch-enum -Wundef -Wunreachable-code -Wunused -g -fsanitize=thread -pthread
 # Warning suppressions
 CFLAGS += -Wno-sign-compare
 
@@ -82,7 +82,7 @@ fmt: $(SOURCES) $(HEADERS)
 	$(CLANG_FORMAT) -i $^
 
 # Add dependency of target executables in TécnicoFS (to be linked with it)
-$(TARGET_EXECS): fs/operations.o fs/state.o
+$(TARGET_EXECS): fs/utils.o fs/operations.o fs/state.o
 # ^ Note the lack of a rule.
 # make uses a set of default rules, one of which compiles C binaries
 # the CC, LD, CFLAGS and LDFLAGS are used in this rule
