@@ -218,7 +218,6 @@ int tfs_sym_link(char const *target, char const *link_name) {
 
     // add entry to dir and undo operations if no entries left on dir
     if (add_dir_entry(root_dir_inode, link_name + 1, new_inum) == -1) {
-        data_block_free(new_bnum);
         inode_delete(new_inum);
         rwl_unlock(root_lock);
         return -1;
