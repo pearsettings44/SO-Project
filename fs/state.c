@@ -146,7 +146,7 @@ int state_destroy(void) {
 
     // destroy all remaining inode locks
     for (int i = 0; i < INODE_TABLE_SIZE; ++i) {
-        if (freeinode_ts[i] == TAKEN) {
+        if(freeinode_ts[i] == TAKEN) {
             rwl_destroy(inode_rwl + i);
         }
     }
@@ -226,8 +226,8 @@ int inode_create(inode_type i_type) {
     }
 
     /*
-     * section doesn't require locks as inode_alloc returned a thread-safe inum
-     */
+    * section doesn't require locks as inode_alloc returned a thread-safe inum
+    */
 
     inode_t *inode = &inode_table[inumber];
     insert_delay(); // simulate storage access delay (to inode)
@@ -298,7 +298,7 @@ int inode_delete(int inumber) {
 
     // lock inode table
     rwl_wrlock(&inode_table_rwl);
-    // if another thread deleted this inode before acquiring rwlock
+    // if another thread deleted this inode before acquiring rwlock 
     if (freeinode_ts[inumber] == FREE) {
         rwl_unlock(&inode_table_rwl);
         return -1;
@@ -307,7 +307,7 @@ int inode_delete(int inumber) {
     if (inode_table[inumber].i_size > 0) {
         data_block_free(inode_table[inumber].i_data_block);
     }
-
+    
     // destroy inode's rwlock
     rwl_destroy(inode_rwl + inumber);
 
@@ -317,6 +317,7 @@ int inode_delete(int inumber) {
 
     return 0;
 }
+
 
 /**
  * Obtain a pointer to an inode from its inumber.
@@ -362,7 +363,7 @@ int clear_dir_entry(inode_t *inode, char const *sub_name) {
     if (inode->i_node_type != T_DIRECTORY) {
         return -1;
     }
-
+    
     // rwlock_wrlock();
 
     // Locates the block containing the entries of the directory
@@ -374,11 +375,11 @@ int clear_dir_entry(inode_t *inode, char const *sub_name) {
         if (!strcmp(dir_entry[i].d_name, sub_name)) {
             dir_entry[i].d_inumber = -1;
             memset(dir_entry[i].d_name, 0, MAX_FILE_NAME);
-
+            
             return 0;
         }
     }
-
+    
     return -1; // sub_name not found
 }
 
@@ -502,11 +503,11 @@ int data_block_free(int block_number) {
 
     // lock blocks bitmap table (not necessary but might make data more compact)
     rwl_wrlock(&free_blocks_rwl);
-
+    
     insert_delay(); // simulate storage access delay to free_blocks
 
     free_blocks[block_number] = FREE;
-
+    
     // lock blocks bitmap table
     rwl_unlock(&free_blocks_rwl);
 
@@ -557,7 +558,7 @@ int add_to_open_file_table(int inumber, size_t offset) {
             return i;
         }
     }
-
+    
     rwl_unlock(&open_file_table_rwl);
 
     return -1;
@@ -568,25 +569,25 @@ int add_to_open_file_table(int inumber, size_t offset) {
  *
  * Input:
  *   - fhandle: file handle to free/close
- *
+ * 
  * Returns 0 if succesful and -1 if failed (invalid fhandle or fhandle not in
  * open file table)
  */
 int remove_from_open_file_table(int fhandle) {
-    // invalid fhandle
-    if (!valid_file_handle(fhandle)) {
+    // invalid fhandle 
+    if(!valid_file_handle(fhandle)) {
         return -1;
     }
 
     rwl_wrlock(&open_file_table_rwl);
-    // not opened fhandle
+    // not opened fhandle 
     if (free_open_file_entries[fhandle] == FREE) {
         rwl_unlock(&open_file_table_rwl);
         return -1;
     }
 
     free_open_file_entries[fhandle] = FREE;
-
+    
     // unlock open file table
     rwl_unlock(&open_file_table_rwl);
 
@@ -616,14 +617,14 @@ open_file_entry_t *get_open_file_entry(int fhandle) {
 
 /**
  * Determine if given inumber is in the open file table
- *
+ * 
  * Input:
  *   - inumber: inumber of inode to be searched for in open file table
- *
+ * 
  * Returns true if given inumber is present in the open file table and false
  * if not.
- *
- */
+ * 
+*/
 bool is_in_open_file_table(int inumber) {
     if (!valid_inumber(inumber)) {
         return false;

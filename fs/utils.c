@@ -3,8 +3,9 @@
  */
 
 #include <pthread.h>
-#include <stdio.h>
 #include <stdlib.h>
+#include <stdio.h>
+
 
 /**
  * Wrapper for pthread_rwlock_init with default arguments

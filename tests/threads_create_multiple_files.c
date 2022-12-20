@@ -1,11 +1,11 @@
 #include "fs/operations.h"
 #include <assert.h>
-#include <pthread.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
+#include <pthread.h>
+#include <stdlib.h>
 
 void *create_file(void *args) {
     // trick compiler
@@ -49,7 +49,7 @@ int main() {
 
     /*
      * Write into the EOF a character for each file descriptor
-     * After checking the contents, there should be 15 characters, one per
+     * After checking the contents, there should be 15 characters, one per 
      * thread
      */
     char buffer[16];

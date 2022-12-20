@@ -1,14 +1,13 @@
 #include "fs/operations.h"
 #include <assert.h>
-#include <pthread.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
+#include <pthread.h>
+#include <stdlib.h>
 
-uint8_t const file_contents[] =
-    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+uint8_t const file_contents[] = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
 char const target_path1[] = "/f1";
 
 void *assert_write_ok(int fd) {
@@ -35,10 +34,10 @@ int main() {
     *fd = tfs_open(target_path1, TFS_O_CREAT);
 
     /*
-     * Use the same open_file_entry to write 64 bytes to a file (\000 included)
-     * At the end, the file should be full, so another write operation should
-     * return 0
-     */
+    * Use the same open_file_entry to write 64 bytes to a file (\000 included)
+    * At the end, the file should be full, so another write operation should
+    * return 0
+    */
     for (int i = 0; i < 16; ++i) {
         if (pthread_create(&tid[i], NULL, write_contents, (void *)fd) != 0) {
             exit(EXIT_FAILURE);
@@ -51,7 +50,7 @@ int main() {
 
     assert_write_ok(*fd);
     assert(tfs_close(*fd) != -1);
-
+    
     printf("Successful test.\n");
 
     return 0;
