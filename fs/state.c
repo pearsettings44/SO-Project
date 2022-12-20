@@ -31,7 +31,7 @@ static pthread_rwlock_t free_blocks_rwl;
  */
 static open_file_entry_t *open_file_table;
 static allocation_state_t *free_open_file_entries;
-static pthread_rwlock_t open_file_table_rwlock;
+static pthread_rwlock_t open_file_table_rwl;
 
 // Convenience macros
 #define INODE_TABLE_SIZE (fs_params.max_inode_count)
@@ -130,8 +130,9 @@ int state_init(tfs_params params) {
         free_open_file_entries[i] = FREE;
     }
 
-    rwl_init(&open_file_table_rwlock);
     rwl_init(&inode_table_rwl);
+    rwl_init(&free_blocks_rwl);
+    rwl_init(&open_file_table_rwl);
 
     return 0;
 }
@@ -143,7 +144,7 @@ int state_init(tfs_params params) {
  */
 int state_destroy(void) {
 
-    // destroy all inode locks
+    // destroy all remaining inode locks
     for (int i = 0; i < INODE_TABLE_SIZE; ++i) {
         if(freeinode_ts[i] == TAKEN) {
             rwl_destroy(inode_rwl + i);
@@ -164,6 +165,10 @@ int state_destroy(void) {
     free_blocks = NULL;
     open_file_table = NULL;
     free_open_file_entries = NULL;
+
+    rwl_destroy(&inode_table_rwl);
+    rwl_destroy(&free_blocks_rwl);
+    rwl_destroy(&open_file_table_rwl);
 
     return 0;
 }
@@ -302,9 +307,6 @@ int inode_delete(int inumber) {
     if (inode_table[inumber].i_size > 0) {
         data_block_free(inode_table[inumber].i_data_block);
     }
-        
-    // unlock inode_rwl
-    rwl_unlock(inode_rwl + inumber);
     
     // destroy inode's rwlock
     rwl_destroy(inode_rwl + inumber);
@@ -499,14 +501,14 @@ int data_block_free(int block_number) {
         return -1;
     }
 
-    // lock blocks bitmap table
+    // lock blocks bitmap table (not necessary but might make data more compact)
     rwl_wrlock(&free_blocks_rwl);
     
     insert_delay(); // simulate storage access delay to free_blocks
 
     free_blocks[block_number] = FREE;
     
-    // unlock blocks bitmap table
+    // lock blocks bitmap table
     rwl_unlock(&free_blocks_rwl);
 
     return 0;
@@ -543,7 +545,7 @@ void *data_block_get(int block_number) {
  */
 int add_to_open_file_table(int inumber, size_t offset) {
 
-    rwl_wrlock(&open_file_table_rwlock);
+    rwl_wrlock(&open_file_table_rwl);
 
     for (int i = 0; i < MAX_OPEN_FILES; i++) {
         if (free_open_file_entries[i] == FREE) {
@@ -552,12 +554,12 @@ int add_to_open_file_table(int inumber, size_t offset) {
             open_file_table[i].of_inumber = inumber;
             open_file_table[i].of_offset = offset;
             mutex_unlock(&open_file_table[i].lock);
-            rwl_unlock(&open_file_table_rwlock);
+            rwl_unlock(&open_file_table_rwl);
             return i;
         }
     }
     
-    rwl_unlock(&open_file_table_rwlock);
+    rwl_unlock(&open_file_table_rwl);
 
     return -1;
 }
@@ -572,25 +574,22 @@ int add_to_open_file_table(int inumber, size_t offset) {
  * open file table)
  */
 int remove_from_open_file_table(int fhandle) {
-    // locks open file table
-    rwl_wrlock(&open_file_table_rwlock);
-
     // invalid fhandle 
     if(!valid_file_handle(fhandle)) {
-        rwl_unlock(&open_file_table_rwlock);
         return -1;
     }
 
+    rwl_wrlock(&open_file_table_rwl);
     // not opened fhandle 
     if (free_open_file_entries[fhandle] == FREE) {
-        rwl_unlock(&open_file_table_rwlock);
+        rwl_unlock(&open_file_table_rwl);
         return -1;
     }
 
     free_open_file_entries[fhandle] = FREE;
     
     // unlock open file table
-    rwl_unlock(&open_file_table_rwlock);
+    rwl_unlock(&open_file_table_rwl);
 
     return 0;
 }
@@ -631,18 +630,18 @@ bool is_in_open_file_table(int inumber) {
         return false;
     }
 
-    rwl_rdlock(&open_file_table_rwlock);
+    rwl_rdlock(&open_file_table_rwl);
 
     for (int i = 0; i < MAX_OPEN_FILES; ++i) {
         if (free_open_file_entries[i] == TAKEN) {
             if (open_file_table[i].of_inumber == inumber) {
-                rwl_unlock(&open_file_table_rwlock);
+                rwl_unlock(&open_file_table_rwl);
                 return true;
             }
         }
     }
 
-    rwl_unlock(&open_file_table_rwlock);
+    rwl_unlock(&open_file_table_rwl);
 
     return false;
 }

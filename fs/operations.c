@@ -161,8 +161,8 @@ int tfs_open(char const *name, tfs_file_mode_t mode) {
 
         // Add entry in the root directory
         if (add_dir_entry(root_dir_inode, name + 1, inum) == -1) {
-            rwl_unlock(root_dir_rwl);
             inode_delete(inum);
+            rwl_unlock(root_dir_rwl);
             return -1; // no space in directory
         }
         rwl_unlock(root_dir_rwl);
