@@ -11,12 +11,9 @@ int main() {
     // Create file
     int fd = tfs_open(path, TFS_O_CREAT);
     assert(fd != -1);
-    assert(tfs_close(fd) != -1);
 
     // Unlink file
-    assert(tfs_unlink(path) != -1);
-
-    assert(tfs_destroy() != -1);
+    assert(tfs_unlink(path) == -1);
 
 
     printf("Successful test.\n");
