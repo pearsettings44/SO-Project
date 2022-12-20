@@ -1,13 +1,13 @@
 #include "operations.h"
 #include "config.h"
-#include "utils.h"
 #include "state.h"
+#include "utils.h"
 #include <fcntl.h>
+#include <pthread.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <pthread.h>
 
 #include "betterassert.h"
 
@@ -72,7 +72,7 @@ static int tfs_lookup(char const *name, inode_t *root_inode) {
         return -1;
     }
 
-    // check if given a directory's inode 
+    // check if given a directory's inode
     if (root_inode->i_node_type != T_DIRECTORY) {
         return -1;
     }
@@ -97,7 +97,7 @@ int tfs_open(char const *name, tfs_file_mode_t mode) {
     pthread_rwlock_t *root_dir_rwl = inode_rwl_get(ROOT_DIR_INUM);
     // lock root dir to avoid changes mid write (creation of duplicate files)
     rwl_wrlock(root_dir_rwl);
-    
+
     int inum = tfs_lookup(name, root_dir_inode);
     size_t offset;
 
@@ -108,7 +108,7 @@ int tfs_open(char const *name, tfs_file_mode_t mode) {
         inode_t *inode = inode_get(inum);
         ALWAYS_ASSERT(inode != NULL,
                       "tfs_open: directory files must have an inode");
-        
+
         pthread_rwlock_t *inode_rwl = inode_rwl_get(inum);
         // lock inode
         rwl_wrlock(inode_rwl);
@@ -129,7 +129,7 @@ int tfs_open(char const *name, tfs_file_mode_t mode) {
             rwl_unlock(inode_rwl);
             int fd = tfs_open(buffer, mode);
             // if dangled link
-            if (fd == - 1) {
+            if (fd == -1) {
                 return -1;
             }
 
@@ -201,7 +201,7 @@ int tfs_sym_link(char const *target, char const *link_name) {
         return -1;
     }
 
-    // check if a file with link_name already exists 
+    // check if a file with link_name already exists
     if (tfs_lookup(link_name, root_dir_inode) != -1) {
         rwl_unlock(root_lock);
         return -1;
@@ -276,7 +276,7 @@ int tfs_link(char const *target, char const *link_name) {
 
     // lock target file inode
     rwl_wrlock(target_inode_lock);
-    
+
     // cannot hardlink to symlink (stated in paper)
     if (target_inode->i_node_type == T_LINK) {
         rwl_unlock(target_inode_lock);
@@ -329,7 +329,7 @@ ssize_t tfs_write(int fhandle, void const *buffer, size_t to_write) {
     // in this implementation we cannot close opened files
     // // ALWAYS_ASSERT(inode != NULL, "tfs_write: inode of open file deleted");
 
-    // lock inode to avoid changes mid write 
+    // lock inode to avoid changes mid write
     pthread_rwlock_t *inode_lock = inode_rwl_get(file->of_inumber);
     rwl_wrlock(inode_lock);
 
@@ -368,7 +368,6 @@ ssize_t tfs_write(int fhandle, void const *buffer, size_t to_write) {
         if (file->of_offset > inode->i_size) {
             inode->i_size = file->of_offset;
         }
-
     }
 
     rwl_unlock(inode_lock);
@@ -390,7 +389,7 @@ ssize_t tfs_read(int fhandle, void *buffer, size_t len) {
 
     // cannot delete open file in this implementation
     // // ALWAYS_ASSERT(inode != NULL, "tfs_read: inode of open file deleted");
-    
+
     // From the open file table entry, we get the inode
     inode_t *inode = inode_get(file->of_inumber);
     // lock inode to avoid changes mid read
@@ -420,7 +419,7 @@ ssize_t tfs_read(int fhandle, void *buffer, size_t len) {
 
     rwl_unlock(inode_lock);
     mutex_unlock(&file->lock);
-    
+
     return (ssize_t)to_read;
 }
 
@@ -438,13 +437,13 @@ int tfs_unlink(char const *target) {
         rwl_unlock(root_lock);
         return -1;
     }
-    
+
     // get target's inode
     inode_t *target_inode = inode_get(target_inum);
 
-    // if file is opened, do not allow unlink 
+    // if file is opened, do not allow unlink
     // symlinks are never in the open file table
-    if ((target_inode->i_node_type != T_LINK) && 
+    if ((target_inode->i_node_type != T_LINK) &&
         (is_in_open_file_table(target_inum))) {
         rwl_unlock(root_lock);
         return -1;
@@ -510,7 +509,6 @@ int tfs_copy_from_external_fs(char const *source_path, char const *dest_path) {
     if (fclose(file) == EOF || tfs_close(fd) == -1) {
         return -1;
     }
-
 
     return 0;
 }
