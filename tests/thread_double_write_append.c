@@ -5,60 +5,50 @@
 #include <stdio.h>
 #include <string.h>
 #include <pthread.h>
+#include <stdlib.h>
 
-uint8_t const file_contents[] = "AAA!";
+uint8_t const file_contents[] = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
 char const target_path1[] = "/f1";
 
-void *assert_contents_ok(void *path) {
-    int f = tfs_open((char *)path, TFS_O_APPEND);
-    assert(f != -1);
+void *assert_write_ok(int fd) {
 
-    uint8_t buffer[sizeof(file_contents)];
-    assert(tfs_read(f, buffer, sizeof(buffer)) == sizeof(buffer));
-    assert(memcmp(buffer, file_contents, sizeof(buffer)) == 0);
-
-    assert(tfs_close(f) != -1);
+    // should return 0 because file is full
+    assert(tfs_write(fd, file_contents, sizeof(file_contents)) == 0);
 
     return NULL;
 }
 
-void *write_contents(void *path) {
-    int f = tfs_open((char *)path, 0);
-    assert(f != -1);
+void *write_contents(void *fd) {
 
-    assert(tfs_write(f, file_contents, sizeof(file_contents)) ==
+    assert(tfs_write(*(int *)fd, file_contents, sizeof(file_contents)) ==
            sizeof(file_contents));
-
-    assert(tfs_close(f) != -1);
 
     return NULL;
 }
 
 // meant to be tested with fsanitize=thread
 int main() {
-    pthread_t tid[2];
+    pthread_t tid[16];
     assert(tfs_init(NULL) != -1);
+    int *fd = malloc(sizeof(int));
 
-    int fd = tfs_open(target_path1, TFS_O_CREAT);
+    *fd = tfs_open(target_path1, TFS_O_CREAT);
 
-    assert(tfs_close(fd) != -1);
+    /*
+    * use the same open_file_entry to write 64 bytes to a file (\000 included)
+    * At the end, the file should be full, so another write operation should
+    * return 0
+    */
+    for (int i = 0; i < 16; ++i) {
+        pthread_create(&tid[i], NULL, write_contents, (void *)fd);
+    }
 
-    // writing the same contents to the file, at the end the contents
-    // should be there, regardless of which thread writes it
-    pthread_create(&tid[0], NULL, write_contents, (void *)target_path1);
-    pthread_create(&tid[1], NULL, write_contents, (void *)target_path1);
+    for (int i = 0; i < 16; ++i) {
+        pthread_join(tid[i], NULL);
+    }
 
-    pthread_join(tid[0], NULL);
-    pthread_join(tid[1], NULL);
-    
-    // reading with two threads, should read the same content
-    pthread_create(&tid[0], NULL, assert_contents_ok, (void *)target_path1);
-    pthread_create(&tid[1], NULL, assert_contents_ok, (void *)target_path1);
-    
-    pthread_join(tid[0], NULL);
-    pthread_join(tid[1], NULL);
-
-    assert_contents_ok((void *)target_path1);
+    assert_write_ok(*fd);
+    assert(tfs_close(*fd) != -1);
     
     printf("Successful test.\n");
 
