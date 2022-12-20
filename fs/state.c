@@ -32,7 +32,6 @@ static pthread_rwlock_t free_blocks_rwl;
 static open_file_entry_t *open_file_table;
 static allocation_state_t *free_open_file_entries;
 static pthread_rwlock_t open_file_table_rwlock;
-// static pthread_rwlock_t inode_table_lock;
 
 // Convenience macros
 #define INODE_TABLE_SIZE (fs_params.max_inode_count)
@@ -549,8 +548,10 @@ int add_to_open_file_table(int inumber, size_t offset) {
     for (int i = 0; i < MAX_OPEN_FILES; i++) {
         if (free_open_file_entries[i] == FREE) {
             free_open_file_entries[i] = TAKEN;
+            mutex_lock(&open_file_table[i].lock);
             open_file_table[i].of_inumber = inumber;
             open_file_table[i].of_offset = offset;
+            mutex_unlock(&open_file_table[i].lock);
             rwl_unlock(&open_file_table_rwlock);
             return i;
         }
