@@ -13,6 +13,8 @@
 
 #define BLOCK_SIZE state_block_size()
 
+static pthread_mutex_t tfs_open_mutex;
+
 tfs_params tfs_default_params() {
     tfs_params params = {
         .max_inode_count = 64,
@@ -40,6 +42,8 @@ int tfs_init(tfs_params const *params_ptr) {
     if (root != ROOT_DIR_INUM) {
         return -1;
     }
+
+    mutex_init(&tfs_open_mutex);
 
     return 0;
 }
@@ -93,10 +97,14 @@ int tfs_open(char const *name, tfs_file_mode_t mode) {
         return -1;
     }
     
+    // avoid creation of the same file by different threads 
+    mutex_lock(&tfs_open_mutex);
     int inum = tfs_lookup(name, root_dir_inode);
     size_t offset;
 
     if (inum >= 0) {
+        // already created
+        mutex_unlock(&tfs_open_mutex);
         // The file already exists
         inode_t *inode = inode_get(inum);
         ALWAYS_ASSERT(inode != NULL,
@@ -140,17 +148,20 @@ int tfs_open(char const *name, tfs_file_mode_t mode) {
         // Create inode
         inum = inode_create(T_FILE);
         if (inum == -1) {
+            mutex_unlock(&tfs_open_mutex);
             return -1; // no space in inode table
         }
 
         // Add entry in the root directory
         if (add_dir_entry(root_dir_inode, name + 1, inum) == -1) {
+            mutex_unlock(&tfs_open_mutex);
             inode_delete(inum);
             return -1; // no space in directory
         }
-
+        mutex_unlock(&tfs_open_mutex);
         offset = 0;
     } else {
+        mutex_unlock(&tfs_open_mutex);
         return -1;
     }
 
@@ -173,7 +184,7 @@ int tfs_sym_link(char const *target, char const *link_name) {
     inode_t *root_dir_inode = inode_get(ROOT_DIR_INUM);
     pthread_rwlock_t *root_lock = inode_rwl_get(ROOT_DIR_INUM);
 
-    // lock root inode to avoid changes to subfiles
+    // lock root inode to deny changes to dir mid operation
     rwl_wrlock(root_lock);
 
     // check if target exists
@@ -218,7 +229,6 @@ int tfs_sym_link(char const *target, char const *link_name) {
 
     // add entry to dir and undo operations if no entries left on dir
     if (add_dir_entry(root_dir_inode, link_name + 1, new_inum) == -1) {
-        data_block_free(new_bnum);
         inode_delete(new_inum);
         rwl_unlock(root_lock);
         return -1;
@@ -237,7 +247,9 @@ int tfs_link(char const *target, char const *link_name) {
     // root directory inode
     inode_t *root_dir_inode = inode_get(ROOT_DIR_INUM);
 
-    // lock root directory's inode
+    /*
+     * lock root directory's inode to deny changes to dir mid operation 
+     */
     pthread_rwlock_t *root_lock = inode_rwl_get(ROOT_DIR_INUM);
     rwl_wrlock(root_lock);
 
@@ -266,8 +278,9 @@ int tfs_link(char const *target, char const *link_name) {
         return -1;
     }
 
-    // increment inode's link counter, no lock required because only one link
-    // can be created at a time
+    /*
+     * increment inode's link counter
+     */ 
     inode_get(target_inumber)->i_links_count++;
 
     rwl_unlock(root_lock);
@@ -298,12 +311,13 @@ ssize_t tfs_write(int fhandle, void const *buffer, size_t to_write) {
 
     //  From the open file table entry, we get the inode
     inode_t *inode = inode_get(file->of_inumber);
-    ALWAYS_ASSERT(inode != NULL, "tfs_write: inode of open file deleted");
+    // in this implementation we cannot close opened files
+    // // ALWAYS_ASSERT(inode != NULL, "tfs_write: inode of open file deleted");
 
+    // lock inode to avoid changes mid write 
     pthread_rwlock_t *inode_lock = inode_rwl_get(file->of_inumber);
-
-    // critical section
     rwl_wrlock(inode_lock);
+
     // Determine how many bytes to write
     size_t block_size = state_block_size();
     if (to_write + file->of_offset > block_size) {
@@ -323,9 +337,11 @@ ssize_t tfs_write(int fhandle, void const *buffer, size_t to_write) {
         }
 
         void *block = data_block_get(inode->i_data_block);
-        // rwlock solves this issue
-        ALWAYS_ASSERT(block != NULL, 
-                        "tfs_write: data block deleted mid-write");
+        // if data block delete befored acquiring lock
+        if (block == NULL) {
+            rwl_unlock(inode_lock);
+            return -1;
+        }
 
         // Perform the actual write
         memcpy(block + file->of_offset, buffer, to_write);
@@ -350,13 +366,15 @@ ssize_t tfs_read(int fhandle, void *buffer, size_t len) {
         return -1;
     }
 
+    // cannot delete open file in this implementation
+    // // ALWAYS_ASSERT(inode != NULL, "tfs_read: inode of open file deleted");
+    
     // From the open file table entry, we get the inode
     inode_t *inode = inode_get(file->of_inumber);
-    ALWAYS_ASSERT(inode != NULL, "tfs_read: inode of open file deleted");
-
+    // lock inode to avoid changes mid read
     pthread_rwlock_t *inode_lock = inode_rwl_get(file->of_inumber);
-
     rwl_rdlock(inode_lock);
+
     // Determine how many bytes to read
     size_t to_read = inode->i_size - file->of_offset;
     if (to_read > len) {
@@ -365,8 +383,11 @@ ssize_t tfs_read(int fhandle, void *buffer, size_t len) {
 
     if (to_read > 0) {
         void *block = data_block_get(inode->i_data_block);
-        // rwlock fixes this issue
-        ALWAYS_ASSERT(block != NULL, "tfs_read: data block deleted mid-read");
+        // block was deleted before acquiring the inode lock
+        if (block == NULL) {
+            rwl_unlock(inode_lock);
+            return -1;
+        }
 
         // Perform the actual read
         memcpy(buffer, block + file->of_offset, to_read);
@@ -384,6 +405,7 @@ int tfs_unlink(char const *target) {
     inode_t *root_dir_inode = inode_get(ROOT_DIR_INUM);
     pthread_rwlock_t *root_lock = inode_rwl_get(ROOT_DIR_INUM);
 
+    // lock root directory to avoid changes mid operation
     rwl_wrlock(root_lock);
 
     int target_inum = tfs_lookup(target, root_dir_inode);
@@ -410,17 +432,21 @@ int tfs_unlink(char const *target) {
         return -1;
     }
 
-    // if no no more links, free inode
+    // lock file's inode
+    pthread_rwlock_t *target_rwl = inode_rwl_get(target_inum);
+    rwl_wrlock(target_rwl);
+    // if no more links, free inode
     if (target_inode->i_links_count == 1) {
+        // if other thread deleted this inode
         if (inode_delete(target_inum) == -1) {
             rwl_unlock(root_lock);
             return -1;
         }
-        // NOTE: inode_delete handles inode's block 
     } else {
         target_inode->i_links_count--;
     }
 
+    rwl_unlock(target_rwl);
     rwl_unlock(root_lock);
     return 0;
 }

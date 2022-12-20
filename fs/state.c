@@ -179,7 +179,7 @@ int state_destroy(void) {
  *   - No free slots in inode table.
  */
 static int inode_alloc(void) {
-    rwl_rdlock(&inode_table_rwl);
+    rwl_wrlock(&inode_table_rwl);
     for (size_t inumber = 0; inumber < INODE_TABLE_SIZE; inumber++) {
         if ((inumber * sizeof(allocation_state_t) % BLOCK_SIZE) == 0) {
             insert_delay(); // simulate storage access delay (to freeinode_ts)
@@ -187,18 +187,9 @@ static int inode_alloc(void) {
 
         // Finds first free entry in inode table
         if (freeinode_ts[inumber] == FREE) {
+            freeinode_ts[inumber] = TAKEN;
             rwl_unlock(&inode_table_rwl);
-            rwl_wrlock(&inode_table_rwl);
-            // might be lost on unlock
-            if (freeinode_ts[inumber] == FREE) {
-                freeinode_ts[inumber] = TAKEN;
-                rwl_unlock(&inode_table_rwl);
-                return (int)inumber;
-            } else {
-                // if position was taken by another thread
-                rwl_unlock(&inode_table_rwl);
-                rwl_rdlock(&inode_table_rwl);
-            }
+            return (int)inumber;
         }
     }
 
@@ -309,13 +300,13 @@ int inode_delete(int inumber) {
         return -1;
     }
 
-    // lock inode to avoid writes to data_block and/or changes to file size
-    rwl_rdlock(inode_rwl + inumber);
     if (inode_table[inumber].i_size > 0) {
         data_block_free(inode_table[inumber].i_data_block);
     }
-    rwl_unlock(inode_rwl + inumber);
         
+    // unlock inode_rwl
+    rwl_unlock(inode_rwl + inumber);
+    
     // destroy inode's rwlock
     rwl_destroy(inode_rwl + inumber);
 
@@ -481,27 +472,19 @@ int find_in_dir(inode_t *inode, char const *sub_name) {
  *   - No free data blocks.
  */
 int data_block_alloc(void) {
-    rwl_rdlock(&free_blocks_rwl);
+    rwl_wrlock(&free_blocks_rwl);
     for (size_t i = 0; i < DATA_BLOCKS; i++) {
         if (i * sizeof(allocation_state_t) % BLOCK_SIZE == 0) {
             insert_delay(); // simulate storage access delay to free_blocks
         }
 
         if (free_blocks[i] == FREE) {
+            free_blocks[i] = TAKEN;
             rwl_unlock(&free_blocks_rwl);
-            rwl_wrlock(&free_blocks_rwl);
-            // might be lost on unlock
-            if (free_blocks[i] == FREE) {
-                free_blocks[i] = TAKEN;
-                rwl_unlock(&free_blocks_rwl);
-                return (int)i;
-            } else {
-                // in case block was taken on another thread
-                rwl_unlock(&free_blocks_rwl);
-                rwl_rdlock(&free_blocks_rwl);
-            }
+            return (int)i;
         }
     }
+
     rwl_unlock(&free_blocks_rwl);
     return -1;
 }
@@ -561,24 +544,15 @@ void *data_block_get(int block_number) {
  */
 int add_to_open_file_table(int inumber, size_t offset) {
 
-    rwl_rdlock(&open_file_table_rwlock);
+    rwl_wrlock(&open_file_table_rwlock);
 
     for (int i = 0; i < MAX_OPEN_FILES; i++) {
         if (free_open_file_entries[i] == FREE) {
+            free_open_file_entries[i] = TAKEN;
+            open_file_table[i].of_inumber = inumber;
+            open_file_table[i].of_offset = offset;
             rwl_unlock(&open_file_table_rwlock);
-            rwl_wrlock(&open_file_table_rwlock);
-            // might be lost on unlock, se needs to be rechecked
-            if (free_open_file_entries[i] == FREE) {
-                free_open_file_entries[i] = TAKEN;
-                open_file_table[i].of_inumber = inumber;
-                open_file_table[i].of_offset = offset;
-                rwl_unlock(&open_file_table_rwlock);
-                return i;
-            } else {
-                rwl_unlock(&open_file_table_rwlock);
-                rwl_rdlock(&open_file_table_rwlock);
-            }
-
+            return i;
         }
     }
     
@@ -660,18 +634,9 @@ bool is_in_open_file_table(int inumber) {
 
     for (int i = 0; i < MAX_OPEN_FILES; ++i) {
         if (free_open_file_entries[i] == TAKEN) {
-            rwl_unlock(&open_file_table_rwlock);
-            rwl_wrlock(&open_file_table_rwlock);
-            // might be freed on unlock
-            if (free_open_file_entries[i] == TAKEN) {
-                if (open_file_table[i].of_inumber == inumber) {
-                    rwl_unlock(&open_file_table_rwlock);
-                    return true;
-                }
-            } else {
-                // continue reading if inumbers if entry was freed
+            if (open_file_table[i].of_inumber == inumber) {
                 rwl_unlock(&open_file_table_rwlock);
-                rwl_rdlock(&open_file_table_rwlock);
+                return true;
             }
         }
     }
