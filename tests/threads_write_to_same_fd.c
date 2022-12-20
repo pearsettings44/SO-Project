@@ -26,7 +26,6 @@ void *write_contents(void *fd) {
     return NULL;
 }
 
-// meant to be tested with fsanitize=thread
 int main() {
     pthread_t tid[16];
     assert(tfs_init(NULL) != -1);
@@ -35,12 +34,14 @@ int main() {
     *fd = tfs_open(target_path1, TFS_O_CREAT);
 
     /*
-    * use the same open_file_entry to write 64 bytes to a file (\000 included)
+    * Use the same open_file_entry to write 64 bytes to a file (\000 included)
     * At the end, the file should be full, so another write operation should
     * return 0
     */
     for (int i = 0; i < 16; ++i) {
-        pthread_create(&tid[i], NULL, write_contents, (void *)fd);
+        if (pthread_create(&tid[i], NULL, write_contents, (void *)fd) != 0) {
+            exit(EXIT_FAILURE);
+        }
     }
 
     for (int i = 0; i < 16; ++i) {

@@ -5,7 +5,7 @@
 #include <pthread.h>
 #include <stdlib.h>
 
-void *thread_fnc(void *path) {
+void *unlink(void *path) {
     int *r = malloc(sizeof(int));
 
     *r = tfs_unlink((char *)path);
@@ -26,8 +26,11 @@ int main() {
     assert(fd != -1);
     assert(tfs_close(fd) != -1);
 
-    pthread_create(&tid[0], NULL, thread_fnc, (void *)path);
-    pthread_create(&tid[1], NULL, thread_fnc, (void *)path);
+    /*
+     * Attempt to unlink a file from two threads
+     */
+    pthread_create(&tid[0], NULL, unlink, (void *)path);
+    pthread_create(&tid[1], NULL, unlink, (void *)path);
 
     pthread_join(tid[0], (void **) &ret1);
     pthread_join(tid[1], (void **) &ret2);
