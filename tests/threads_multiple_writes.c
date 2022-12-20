@@ -41,8 +41,7 @@ int main() {
     assert(tfs_init(NULL) != -1);
 
     /*
-    * Open and write to the same file multiple times
-    * In the end, only the contents should be there
+    * Open and write to different files 
     */
     for (int i = 0; i < 8; ++i) {
         indexs[i] = malloc(sizeof(int));

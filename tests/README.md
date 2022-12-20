@@ -24,6 +24,15 @@ Below is a description of what each test does.
 
 - `copy_from_external_extralarge`: Try to copy a file with extra large (maximum size) content into a file inside the TFS.
 - `double_symlink`: Try to create a symlink from a symlink and check if it opens ok.
-- `double_thread_write`: Have two different threads writting to the same file and check if it doesn't produce any errors.
-- `read_and_write_thread`: Have one thread reading and another thread writting to the same file and check if it doesn't produce any errors.
 - `remove_open_file`: Check if removing an open file fails.
+- `threads_create_multiple_files`: Create multiple files with the same path to check
+if only one is created using multiple threads. After that use each file descriptor to write a single character (always appending to the end).
+- `threads_multiple_writes`: Create and write to multiple files on different threads and check
+expected results. 
+- `threads_read_and_write`: Open a file and write to it on different threads. Each thread
+should wait to acquire the lock and overwrite the previous one. Check the result with
+multiple threads reading the file. 
+- `threads_unlink_twice`: Attempts to unlink the same file from different threads.
+One should return an error and the other should succeed. 
+- `threads_write_tp_same_fd`: Uses multiple threads to write using the same file descriptor.
+Test will write exactly 1024 bytes to the file, in the end, another call to tfs_write should return 0. 

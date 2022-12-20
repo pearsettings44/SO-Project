@@ -69,6 +69,17 @@ int main() {
     for (int i = 0; i < 15; ++i) {
         pthread_join(tid[i], NULL);
     }
+
+    for (int i = 0; i < 15; ++i) {
+        if (pthread_create(&tid[i], NULL, read_contents,
+                (void *)target_path1) != 0) {
+            exit(EXIT_FAILURE); 
+        }
+    }
+
+    for (int i = 0; i < 15; ++i) {
+        pthread_join(tid[i], NULL);
+    }
     
     assert_contents_ok();
 
