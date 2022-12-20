@@ -13,8 +13,6 @@
 
 #define BLOCK_SIZE state_block_size()
 
-static pthread_mutex_t tfs_open_mutex;
-
 tfs_params tfs_default_params() {
     tfs_params params = {
         .max_inode_count = 64,
@@ -43,8 +41,6 @@ int tfs_init(tfs_params const *params_ptr) {
         return -1;
     }
 
-    mutex_init(&tfs_open_mutex);
-
     return 0;
 }
 
@@ -53,7 +49,6 @@ int tfs_destroy() {
         return -1;
     }
 
-    mutex_destroy(&tfs_open_mutex);
     return 0;
 }
 
