@@ -4,7 +4,6 @@
 
 int main() {
     char *path1 = "/f1";
-    char *path2 = "/f2";
 
     /* Tests different scenarios where tfs_copy_from_external_fs is expected to
      * fail */
