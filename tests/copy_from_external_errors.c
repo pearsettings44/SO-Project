@@ -4,6 +4,7 @@
 
 int main() {
     char *path1 = "/f1";
+    char *path2 = "/f2";
 
     /* Tests different scenarios where tfs_copy_from_external_fs is expected to
      * fail */
@@ -17,7 +18,8 @@ int main() {
     // Scenario 1: source file does not exist
     assert(tfs_copy_from_external_fs("./unexistent", path1) == -1);
 
-    // TODO: add more failure scenarios
+    // Scenario 2: source files is too large
+    assert(tfs_copy_from_external_fs("./tests/file_to_copy_over1025.txt", path1) == -1);
 
     printf("Successful test.\n");
 
