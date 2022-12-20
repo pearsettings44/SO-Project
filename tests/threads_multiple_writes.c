@@ -1,16 +1,16 @@
 #include "fs/operations.h"
 #include <assert.h>
-#include <pthread.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
+#include <pthread.h>
+#include <stdlib.h>
 
 char const *file_contents[] = {"AAA!", "BBB!", "CCC!", "DDD!",
-                               "EEE!", "FFF!", "HHH!", "GGG!"};
-char const *target_path[] = {"/f1", "/f2", "/f3", "/f4",
-                             "/f5", "/f6", "/f7", "/f8"};
+                                "EEE!", "FFF!", "HHH!", "GGG!"};
+char const *target_path[] = {"/f1", "/f2", "/f3", "/f4", "/f5", "/f6",
+                                "/f7", "/f8"};
 
 void assert_contents_ok() {
     char buffer[10];
@@ -41,8 +41,8 @@ int main() {
     assert(tfs_init(NULL) != -1);
 
     /*
-     * Open and write to different files
-     */
+    * Open and write to different files 
+    */
     for (int i = 0; i < 8; ++i) {
         indexs[i] = malloc(sizeof(int));
         *indexs[i] = i;
@@ -54,7 +54,7 @@ int main() {
     for (int i = 0; i < 8; ++i) {
         pthread_join(tid[i], NULL);
     }
-
+    
     assert_contents_ok();
 
     printf("Successful test.\n");
