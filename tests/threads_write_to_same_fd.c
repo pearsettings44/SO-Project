@@ -54,5 +54,8 @@ int main() {
 
     printf("Successful test.\n");
 
+    free(fd);
+    assert(tfs_destroy() != -1);
+
     return 0;
 }
