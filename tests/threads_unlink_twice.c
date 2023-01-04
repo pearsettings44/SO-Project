@@ -1,16 +1,16 @@
 #include "../fs/operations.h"
 #include <assert.h>
-#include <stdio.h>
-#include <string.h>
 #include <pthread.h>
+#include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 void *unlink(void *path) {
     int *r = malloc(sizeof(int));
 
     *r = tfs_unlink((char *)path);
 
-    return (void *) r;
+    return (void *)r;
 }
 
 int main() {
@@ -20,7 +20,7 @@ int main() {
     int *ret2;
 
     assert(tfs_init(NULL) != -1);
-    
+
     // Create file
     int fd = tfs_open(path, TFS_O_CREAT);
     assert(fd != -1);
@@ -32,8 +32,8 @@ int main() {
     pthread_create(&tid[0], NULL, unlink, (void *)path);
     pthread_create(&tid[1], NULL, unlink, (void *)path);
 
-    pthread_join(tid[0], (void **) &ret1);
-    pthread_join(tid[1], (void **) &ret2);
+    pthread_join(tid[0], (void **)&ret1);
+    pthread_join(tid[1], (void **)&ret2);
 
     assert((*ret1 == 0 && *ret2 == -1) || (*ret1 == -1 && *ret2 == 0));
 
