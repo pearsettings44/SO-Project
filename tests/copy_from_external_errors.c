@@ -18,7 +18,8 @@ int main() {
     assert(tfs_copy_from_external_fs("./unexistent", path1) == -1);
 
     // Scenario 2: source files is too large
-    assert(tfs_copy_from_external_fs("./tests/file_to_copy_over1025.txt", path1) == -1);
+    assert(tfs_copy_from_external_fs("./tests/file_to_copy_over1025.txt",
+                                     path1) == -1);
 
     printf("Successful test.\n");
 

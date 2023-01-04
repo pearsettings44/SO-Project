@@ -1,11 +1,11 @@
 #include "fs/operations.h"
 #include <assert.h>
+#include <pthread.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
-#include <string.h>
-#include <pthread.h>
 #include <stdlib.h>
+#include <string.h>
 
 uint8_t const file_contents[] = "AAA!";
 char const target_path1[] = "/f1";
@@ -54,14 +54,13 @@ int main() {
 
     assert(tfs_close(fd) != -1);
 
-
     /*
      * Open and write to the same file multiple times
      * In the end, only the contents should be there
      */
     for (int i = 0; i < 15; ++i) {
-        if (pthread_create(&tid[i], NULL, write_contents, 
-                (void *)target_path1) != 0) {
+        if (pthread_create(&tid[i], NULL, write_contents,
+                           (void *)target_path1) != 0) {
             exit(EXIT_FAILURE);
         }
     }
@@ -72,18 +71,18 @@ int main() {
 
     for (int i = 0; i < 15; ++i) {
         if (pthread_create(&tid[i], NULL, read_contents,
-                (void *)target_path1) != 0) {
-            exit(EXIT_FAILURE); 
+                           (void *)target_path1) != 0) {
+            exit(EXIT_FAILURE);
         }
     }
 
     for (int i = 0; i < 15; ++i) {
         pthread_join(tid[i], NULL);
     }
-    
+
     assert_contents_ok();
 
     printf("Successful test.\n");
-    
+
     return 0;
 }
