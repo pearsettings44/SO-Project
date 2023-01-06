@@ -1,13 +1,12 @@
-#include <sys/types.h>
-#include <sys/stat.h>
+#include "logging.h"
 #include <errno.h>
 #include <fcntl.h>
-#include <stdlib.h>
-#include "logging.h"
-#include <string.h>
-#include <unistd.h>
-#include <errno.h>
 #include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <unistd.h>
 
 #define PUB_PIPE_PATHNAME 256
 #define BOX_NAME 32
@@ -26,8 +25,7 @@ int main(int argc, char **argv) {
         exit(EXIT_FAILURE);
     }
 
-    if (mkfifo(argv[1], S_IRUSR | S_IWUSR | S_IWGRP) == -1 
-                && errno != EEXIST) {
+    if (mkfifo(argv[1], S_IRUSR | S_IWUSR | S_IWGRP) == -1 && errno != EEXIST) {
         fprintf(stderr, "mbroker: couldn't create FIFO \n");
         exit(EXIT_FAILURE);
     }
@@ -45,18 +43,18 @@ int main(int argc, char **argv) {
         exit(EXIT_FAILURE);
     }
 
-
     switch (req.op_code) {
-        case 1: 
-            // register publisher
-            while(1);
-            break;
-        case 2:
-            // register subscriber
-        case 3:
-            // register manager
-        default:
-            break;
+    case 1:
+        // register publisher
+        while (1)
+            ;
+        break;
+    case 2:
+        // register subscriber
+    case 3:
+        // register manager
+    default:
+        break;
     }
 
     // int pub_fd = open(req.pipe_name, O_RDONLY);

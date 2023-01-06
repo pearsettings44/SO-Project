@@ -1,11 +1,11 @@
+#include <errno.h>
+#include <fcntl.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <sys/stat.h>
 #include <sys/types.h>
-#include <string.h>
-#include <stdlib.h>
-#include <stdio.h>
 #include <unistd.h>
-#include <fcntl.h>
-#include <errno.h>
 
 #include "requests.h"
 
@@ -27,9 +27,9 @@ int request_init(request_t *req, char **args) {
 
 /**
  * Requests a registration of a client using fd of mbroker's FIFO.
- * 
+ *
  * Returns 0 upon success and negative values upon failure
- * 
+ *
  * Error returns:
  *  -1 if failed to write to FIFO
  *  -2 if partial write
@@ -49,12 +49,12 @@ int request_register(int fd, request_t *req, uint8_t op_code) {
 
 /**
  * Create a FIFO designated by a registration request to mbroker.
- * 
+ *
  * Returns 0 upon success and -1 if failed.
  */
 int request_mkfifo(request_t *req) {
-    if (mkfifo(req->pipe_name, S_IRUSR | S_IWUSR | S_IRGRP) == -1 
-                    && errno != EEXIST) {
+    if (mkfifo(req->pipe_name, S_IRUSR | S_IWUSR | S_IRGRP) == -1 &&
+        errno != EEXIST) {
         return -1;
     }
     return 0;

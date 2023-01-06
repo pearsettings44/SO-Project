@@ -1,14 +1,14 @@
-#include <sys/types.h>
-#include <sys/stat.h>
+#include <errno.h>
+#include <fcntl.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
-#include <fcntl.h>
-#include <errno.h>
+#include <sys/stat.h>
+#include <sys/types.h>
 #include <unistd.h>
 
-#include "requests.h"
 #include "logging.h"
+#include "requests.h"
 
 int main(int argc, char **argv) {
     if (argc < 4 || strcmp(argv[1], "--help") == 0) {
@@ -56,7 +56,6 @@ int main(int argc, char **argv) {
     // while(fgets(BUFFER, sizeof(BUFFER), stdin) != NULL) {
     //     continue;
     // }
-    
+
     return 0;
 }
-

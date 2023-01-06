@@ -3,10 +3,10 @@
 
 #include <stdint.h>
 
-// Protocol OP-CODES 
+// Protocol OP-CODES
 #define PUB_REGISTER_OP 1
 #define SUB_REGISTER_OP 2
-#define MAN_REGISTER_OP 3 
+#define MAN_REGISTER_OP 3
 
 #define MAX_PIPE_PATHNAME 256
 #define MAX_BOX_NAME 32
