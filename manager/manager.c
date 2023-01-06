@@ -1,4 +1,5 @@
 #include "logging.h"
+#include <string.h>
 
 static void print_usage() {
     fprintf(stderr, "usage: \n"
@@ -8,9 +9,11 @@ static void print_usage() {
 }
 
 int main(int argc, char **argv) {
-    (void)argc;
-    (void)argv;
-    print_usage();
-    WARN("unimplemented"); // TODO: implement
-    return -1;
+    if (argc < 4 || strcmp(argv[1], "--help") == 0) {
+        print_usage();
+        exit(EXIT_FAILURE);
+    }
+    // print_usage();
+    // WARN("unimplemented"); // TODO: implement
+    // return -1;
 }

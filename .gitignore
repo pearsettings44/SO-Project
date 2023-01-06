@@ -5,6 +5,7 @@ subscriber/sub
 
 tests/
 
+.vscode/
 # Prerequisites
 *.d
 
