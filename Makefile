@@ -3,7 +3,7 @@
 #
 # This makefile should be run from the *root* of the project
 
-CC ?= gcc
+CC = gcc
 LD ?= gcc
 
 # space separated list of directories with header files
@@ -49,7 +49,7 @@ CFLAGS += $(INCLUDES)
 LDFLAGS = -pthread
 
 # Warnings
-CFLAGS += -fdiagnostics-color=always -Wall -Werror -Wextra -Wcast-align -Wconversion -Wfloat-equal -Wformat=2 -Wnull-dereference -Wshadow -Wsign-conversion -Wswitch-default -Wswitch-enum -Wundef -Wunreachable-code -Wunused -pthread -g
+CFLAGS += -fdiagnostics-color=always -Wall -Werror -Wextra -Wcast-align -Wconversion -Wfloat-equal -Wformat=2 -Wnull-dereference -Wshadow -Wsign-conversion -Wswitch-default -Wswitch-enum -Wundef -Wunreachable-code -Wunused -pthread -g 
 # Warning suppressions
 CFLAGS += -Wno-sign-compare
 
