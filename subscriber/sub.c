@@ -17,5 +17,42 @@ int main(int argc, char **argv) {
         exit(EXIT_FAILURE);
     }
 
-    return -1;
+    // request to be sent to mbroker
+    registration_request_t req;
+
+    if (registration_request_init(&req, SUB_REGISTER_OP, argv[2], argv[3]) !=
+        0) {
+        fprintf(stderr, "Error initializing subscriber request to mbroker\n");
+        exit(EXIT_FAILURE);
+    }
+
+    if (registration_request_mkfifo(&req) != 0) {
+        fprintf(stderr, "subscriber: Error creating FIFO\n");
+        exit(EXIT_FAILURE);
+    }
+
+    // open writting pipe end
+    int mbroker_fd = open(argv[1], O_WRONLY);
+    if (mbroker_fd == -1) {
+        fprintf(stderr, "Error connecting to mbroker\n");
+        exit(EXIT_FAILURE);
+    }
+
+    // make request to mbroker
+    if (registration_request_send(mbroker_fd, &req) != 0) {
+        fprintf(stderr, "Error registering subscriber\n");
+        exit(EXIT_FAILURE);
+    }
+
+    close(mbroker_fd);
+
+    // open subscriber assigned FIFO
+    int sub_fd = open(req.pipe_name, O_WRONLY);
+    if (sub_fd == -1) {
+        fprintf(stderr, "subscriber: Error opening pub FIFO\n");
+        exit(EXIT_FAILURE);
+    }
+
+    return 0;
+
 }
