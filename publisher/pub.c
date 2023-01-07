@@ -18,14 +18,15 @@ int main(int argc, char **argv) {
     }
 
     // request to be sent to mbroker
-    request_t req;
+    registration_request_t req;
 
-    if (request_init(&req, argv + 2) != 0) {
+    if (registration_request_init(&req, PUB_REGISTER_OP, argv[2], argv[3]) !=
+        0) {
         fprintf(stderr, "Error initializing publisher request to mbroker\n");
         exit(EXIT_FAILURE);
     }
 
-    if (request_mkfifo(&req) != 0) {
+    if (registration_request_mkfifo(&req) != 0) {
         fprintf(stderr, "publisher: Error creating FIFO\n");
         exit(EXIT_FAILURE);
     }
@@ -38,10 +39,12 @@ int main(int argc, char **argv) {
     }
 
     // make request to mbroker
-    if (request_register(mbroker_fd, &req, PUB_REGISTER_OP) != 0) {
+    if (registration_request_send(mbroker_fd, &req) != 0) {
         fprintf(stderr, "Error registering publisher\n");
         exit(EXIT_FAILURE);
     }
+
+    close(mbroker_fd);
 
     // open publisher assigned FIFO
     int pub_fd = open(req.pipe_name, O_WRONLY);
@@ -50,12 +53,32 @@ int main(int argc, char **argv) {
         exit(EXIT_FAILURE);
     }
 
-    // writting loop and singal handling missing
+    publisher_request_t p_req;
+    char BUFFER[MESSAGE_LENGTH];
 
-    // char BUFFER[1024];
-    // while(fgets(BUFFER, sizeof(BUFFER), stdin) != NULL) {
-    //     continue;
-    // }
+    while (1) {
+        // messages over 1024 chars will be truncated and sent seperately
+        char *r = fgets(BUFFER, MESSAGE_LENGTH, stdin);
+        // received EOF
+        if (r == NULL) {
+            close(pub_fd);
+            exit(EXIT_FAILURE);
+        }
+
+        size_t len = strcspn(BUFFER, "\n");
+        // discard \n and set remaining of the string to \0
+        memset(BUFFER + len, 0, MESSAGE_LENGTH - len);
+        if (publisher_request_init(&p_req, BUFFER) != 0) {
+            fprintf(stderr, "ERROR creating request\n");
+            exit(EXIT_FAILURE);
+        }
+        if (publisher_request_send(pub_fd, &p_req) != 0) {
+            fprintf(stderr, "ERROR couldn't write or partial write to pipe\n");
+            exit(EXIT_FAILURE);
+        }
+    }
+
+    // TODO handle SIGPIPE signal to unlink files and close file descriptors
 
     return 0;
 }
