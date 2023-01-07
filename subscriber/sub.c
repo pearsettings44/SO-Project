@@ -35,12 +35,19 @@ int main(int argc, char **argv) {
     int mbroker_fd = open(argv[1], O_WRONLY);
     if (mbroker_fd == -1) {
         fprintf(stderr, "Error connecting to mbroker\n");
+         if (unlink(argv[2]) != 0) {
+            fprintf(stderr, "ERR failed to delete FIFO %s", argv[2]);
+        }
         exit(EXIT_FAILURE);
     }
 
     // make request to mbroker
     if (registration_request_send(mbroker_fd, &req) != 0) {
         fprintf(stderr, "Error registering subscriber\n");
+        close(mbroker_fd);
+         if (unlink(argv[2]) != 0) {
+            fprintf(stderr, "ERR failed to delete FIFO %s", argv[2]);
+        }
         exit(EXIT_FAILURE);
     }
 
@@ -50,6 +57,9 @@ int main(int argc, char **argv) {
     int sub_fd = open(req.pipe_name, O_WRONLY);
     if (sub_fd == -1) {
         fprintf(stderr, "subscriber: Error opening pub FIFO\n");
+         if (unlink(argv[2]) != 0) {
+            fprintf(stderr, "ERR failed to delete FIFO %s", argv[2]);
+        }
         exit(EXIT_FAILURE);
     }
 
