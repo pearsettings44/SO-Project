@@ -21,7 +21,7 @@ int main(int argc, char **argv) {
     registration_request_t req;
 
     // initialize registration request
-    if (registration_request_init(&req, PUB_REGISTER_OP, argv[2], argv[3]) !=
+    if (manager_request_init(&req, PUB_REGISTER_OP, argv[2], argv[3]) !=
         0) {
         fprintf(stderr, "Error initializing publisher request to mbroker\n");
         exit(EXIT_FAILURE);
@@ -55,7 +55,7 @@ int main(int argc, char **argv) {
 
     close(mbroker_fd);
 
-    // open communication FIFO 
+    // open communication FIFO
     int pub_fd = open(req.pipe_name, O_WRONLY);
     if (pub_fd == -1) {
         fprintf(stderr, "publisher: Error opening pub FIFO\n");
@@ -67,6 +67,7 @@ int main(int argc, char **argv) {
 
     publisher_request_t p_req;
     char BUFFER[MESSAGE_LENGTH];
+    
     while (1) {
         /* read a message from stdin with maximum 1023 chars
          * or it will be truncated and sent seperately
@@ -91,7 +92,7 @@ int main(int argc, char **argv) {
             }
             exit(EXIT_FAILURE);
         }
-        
+
         // send request to mbroker
         if (publisher_request_send(pub_fd, &p_req) != 0) {
             fprintf(stderr, "ERROR couldn't write or partial write to pipe\n");

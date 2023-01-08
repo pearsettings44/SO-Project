@@ -1,4 +1,6 @@
+#include "betterassert.h"
 #include "logging.h"
+#include "operations.h"
 #include "requests.h"
 #include "response.h"
 #include <errno.h>
@@ -22,14 +24,22 @@ int main(int argc, char **argv) {
         exit(EXIT_FAILURE);
     }
 
+    // filesystem instance associated with mbroker
+    if (tfs_init(NULL) != 0) {
+        fprintf(stderr, "ERR: Failed initializing TFS\n");
+        exit(EXIT_FAILURE);
+    }
+
     if (mkfifo(argv[1], S_IRUSR | S_IWUSR | S_IWGRP) == -1 && errno != EEXIST) {
         fprintf(stderr, "mbroker: couldn't create FIFO %s\n", argv[1]);
+        tfs_destroy();
         exit(EXIT_FAILURE);
     }
 
     int mbroker_fd = open(argv[1], O_RDONLY);
     if (mbroker_fd == -1) {
         fprintf(stderr, "Error opening pipe %s\n", argv[1]);
+        tfs_destroy();
         exit(EXIT_FAILURE);
     }
 
@@ -42,6 +52,7 @@ int main(int argc, char **argv) {
             continue;
         } else if (ret != sizeof(req)) {
             fprintf(stderr, "Partial read or no read\n");
+            tfs_destroy();
             exit(EXIT_FAILURE);
         }
 
@@ -70,14 +81,25 @@ int main(int argc, char **argv) {
         }
     }
 
+    tfs_destroy();
+
     return 0;
 }
 
 int handle_publisher(registration_request_t *req) {
+    // unblock publisher process, even if request is invalid
     int publisher_fd = open(req->pipe_name, O_RDONLY);
     if (publisher_fd == -1) {
         fprintf(stderr, "ERROR Failed opening publisher pipe\n");
         exit(EXIT_FAILURE);
+    }
+
+    int box_fd = tfs_open(req->box_name, 0);
+    // invalid box request
+    if (box_fd == -1) {
+        fprintf(stderr, "ERR Box doesn't exist\n");
+        close(publisher_fd);
+        return -1;
     }
 
     publisher_request_t pub_r;
@@ -88,13 +110,23 @@ int handle_publisher(registration_request_t *req) {
         if (ret == 0) {
             break;
         } else if (ret != sizeof(pub_r)) {
+            close(box_fd);
             close(publisher_fd);
             return -1;
         }
-        fprintf(stderr, "%s\n", pub_r.message);
+        size_t len = strlen(pub_r.message);
+        ret = tfs_write(box_fd, pub_r.message, len);
+        // bad write (failed) or box full
+        if (ret != len) {
+            close(box_fd);
+            close(publisher_fd);
+            break;
+        }
     }
 
+    close(box_fd);
     close(publisher_fd);
+
     return 0;
 }
 
@@ -110,6 +142,28 @@ int handle_manager(registration_request_t *req) {
     if (manager_response_init(&resp, req->op_code + 1, 0, NULL) != 0) {
         fprintf(stderr, "ERROR Failed creating response\n");
         exit(EXIT_FAILURE);
+    }
+
+    if (req->op_code == CREATE_BOX_OP) {
+        int fd = tfs_open(req->box_name, TFS_O_CREAT);
+        if (fd == -1) {
+            manager_response_set_error_msg(&resp, "Couldn't create box\n");
+            resp.ret_code = -1;
+        } else {
+            tfs_close(fd);
+        }
+    } else {
+        int fd = tfs_open(req->box_name, 0);
+        if (fd == -1) {
+            manager_response_set_error_msg(&resp, "Box doesn't exist\n");
+            resp.ret_code = -1;
+        } else {
+            tfs_close(fd);
+            if (tfs_unlink(req->box_name) != 0) {
+                resp.ret_code = -1;
+                manager_response_set_error_msg(&resp, "Failed removing box\n");
+            }
+        }
     }
 
     if (manager_response_send(manager_fd, &resp) != 0) {

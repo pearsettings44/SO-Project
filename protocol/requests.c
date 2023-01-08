@@ -26,11 +26,8 @@ int registration_request_init(registration_request_t *req, uint8_t op_code,
         return -1;
     }
 
-    // requests that don't need to communicate a box name
-    if (box_name != NULL) {
-        if (strcpy(req->box_name, box_name) == NULL) {
-            return -2;
-        }
+    if (strcpy(req->box_name, box_name) == NULL) {
+        return -2;
     }
 
     return 0;
@@ -87,6 +84,29 @@ int publisher_request_send(int fd, publisher_request_t *req) {
         return -1;
     } else if (ret != sizeof(*req)) {
         return -2;
+    }
+
+    return 0;
+}
+
+int manager_request_init(registration_request_t *req, uint8_t op_code,
+                         char *pipe_name, char *box) {
+    memset(req, 0, sizeof(*req));
+
+    req->op_code = op_code;
+
+    if (strcpy(req->pipe_name, pipe_name) == NULL) {
+        return -1;
+    }
+
+    if (box != NULL) {
+        char tmp[strlen(box) + 1];
+        tmp[0] = '/';
+        strcat(tmp, box);
+        box = tmp;
+        if (strcpy(req->box_name, box) == NULL) {
+            return -2;
+        }
     }
 
     return 0;
