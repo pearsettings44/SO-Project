@@ -18,7 +18,7 @@ int create_delete_box(uint8_t, char **);
 int list_boxes(char **);
 
 int main(int argc, char **argv) {
-    if ((argc < 4 && (strcmp(argv[3], "list") != 0)) ||
+    if ((argc < 5 && (strcmp(argv[3], "list") != 0)) ||
         strcmp(argv[1], "--help") == 0) {
         print_usage();
         exit(EXIT_FAILURE);
@@ -41,7 +41,7 @@ int main(int argc, char **argv) {
 int create_delete_box(uint8_t op_code, char **args) {
     registration_request_t req;
 
-    if (registration_request_init(&req, op_code, args[2], args[3]) != 0) {
+    if (manager_request_init(&req, op_code, args[2], args[4]) != 0) {
         fprintf(stderr, "manager: Failed initializing request\n");
         exit(EXIT_FAILURE);
     }
@@ -74,10 +74,17 @@ int create_delete_box(uint8_t op_code, char **args) {
 
     ssize_t ret = read(manager_fd, &resp, sizeof(resp));
     if (ret != sizeof(resp)) {
+        fprintf(stderr, "manager, Couldn't read or patial read from pipe %s\n",
+                req.pipe_name);
+        close(manager_fd);
         exit(EXIT_FAILURE);
     }
 
-    fprintf(stderr, "Response from server %d, %d", resp.ret_code, resp.op_code);
+    if (resp.ret_code == -1) {
+        fprintf(stderr, "ERR %s", resp.error_message);
+    } else {
+        fprintf(stdout, "OK\n");
+    }
 
     close(manager_fd);
 
@@ -87,7 +94,7 @@ int create_delete_box(uint8_t op_code, char **args) {
 int list_boxes(char **args) {
     registration_request_t req;
 
-    if (registration_request_init(&req, LIST_BOX_OP, args[2], NULL)) {
+    if (manager_request_init(&req, LIST_BOX_OP, args[2], NULL)) {
         fprintf(stderr, "manager: Failed initializing request");
         exit(EXIT_FAILURE);
     }

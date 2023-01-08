@@ -11,9 +11,9 @@
  * Initialize a response sent from mbroker to a manager client.
  * Must provide the OP_CODE of the response aswell as the return code and error
  * message (empty string if no error i.e ret_code = 0)
-*/
-int manager_response_init(manager_response_t *resp, uint8_t op_code, uint32_t ret_code,
-                  char *message) {
+ */
+int manager_response_init(manager_response_t *resp, uint8_t op_code,
+                          int32_t ret_code, char *message) {
     memset(resp, 0, sizeof(*resp));
 
     resp->op_code = op_code;
@@ -28,11 +28,19 @@ int manager_response_init(manager_response_t *resp, uint8_t op_code, uint32_t re
     return 0;
 }
 
+int manager_response_set_error_msg(manager_response_t *resp, char *msg) {
+    if (strcpy(resp->error_message, msg) == NULL) {
+        return -1;
+    }
+
+    return 0;
+}
+
 /**
  * Send a response to the designated manager at FIFO's opened with given fd.
  * Returns 0 if successful and negative values upon failure
- * 
-*/
+ *
+ */
 int manager_response_send(int fd, manager_response_t *resp) {
     ssize_t ret = write(fd, resp, sizeof(*resp));
 
@@ -47,9 +55,9 @@ int manager_response_send(int fd, manager_response_t *resp) {
 
 /**
  * Initializes a response meant to be sent from mbroker to a subscriber client.
-*/
+ */
 int subscriber_response_init(subscriber_response_t *resp, char *message) {
-    resp->op_code = SUBSCRIBER_OP_CODE; 
+    resp->op_code = SUBSCRIBER_OP_CODE;
 
     if (strcpy(resp->message, message) == NULL) {
         return -1;
