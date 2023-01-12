@@ -41,7 +41,7 @@ int main(int argc, char **argv) {
 int create_delete_box(uint8_t op_code, char **args) {
     registration_request_t req;
 
-    if (manager_request_init(&req, op_code, args[2], args[4]) != 0) {
+    if (registration_request_init(&req, op_code, args[2], args[4]) != 0) {
         fprintf(stderr, "manager: Failed initializing request\n");
         exit(EXIT_FAILURE);
     }
@@ -87,14 +87,18 @@ int create_delete_box(uint8_t op_code, char **args) {
     }
 
     close(manager_fd);
+    if (unlink(req.pipe_name) != 0) {
+        fprintf(stderr, "ERR failed to delete FIFO %s\n", req.pipe_name);
+        exit(EXIT_FAILURE);
+    }
 
-    return 0;
+    exit(EXIT_SUCCESS);
 }
 
 int list_boxes(char **args) {
     registration_request_t req;
 
-    if (manager_request_init(&req, LIST_BOX_OP, args[2], NULL)) {
+    if (registration_request_init(&req, LIST_BOX_OP, args[2], NULL)) {
         fprintf(stderr, "manager: Failed initializing request");
         exit(EXIT_FAILURE);
     }
@@ -116,6 +120,10 @@ int list_boxes(char **args) {
     }
 
     close(mbroker_fd);
+    if (unlink(req.pipe_name) != 0) {
+        fprintf(stderr, "ERR failed to delete FIFO %s\n", req.pipe_name);
+        exit(EXIT_FAILURE);
+    }
 
-    return 0;
+    exit(EXIT_SUCCESS);
 }

@@ -3,6 +3,7 @@
  */
 
 #include "response.h"
+#include <errno.h>
 #include <string.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -45,7 +46,8 @@ int manager_response_send(int fd, manager_response_t *resp) {
     ssize_t ret = write(fd, resp, sizeof(*resp));
 
     if (ret == -1) {
-        return -1;
+        if (errno == EPIPE)
+            return -1;
     } else if (ret != sizeof(*resp)) {
         return -2;
     }
@@ -57,6 +59,7 @@ int manager_response_send(int fd, manager_response_t *resp) {
  * Initializes a response meant to be sent from mbroker to a subscriber client.
  */
 int subscriber_response_init(subscriber_response_t *resp, char *message) {
+    memset(resp, 0, sizeof(*resp));
     resp->op_code = SUBSCRIBER_OP_CODE;
 
     if (strcpy(resp->message, message) == NULL) {

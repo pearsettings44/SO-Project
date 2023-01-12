@@ -1,8 +1,8 @@
+#include "mbroker.h"
 #include "betterassert.h"
+#include "box.h"
 #include "logging.h"
 #include "operations.h"
-#include "requests.h"
-#include "response.h"
 #include <errno.h>
 #include <fcntl.h>
 #include <stdint.h>
@@ -12,30 +12,51 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-#define PUB_PIPE_PATHNAME 256
-#define BOX_NAME 32
+box_t *mbroker_boxes;
+allocation_state_t *boxes_bitmap;
+static int box_count;
 
-int handle_publisher(registration_request_t *);
-int handle_manager(registration_request_t *);
+int init_mbroker() {
+    tfs_params params = tfs_default_params();
+    params.max_inode_count = MAX_BOX_COUNT;
 
+    if (tfs_init(&params) != 0) {
+        fprintf(stderr, "ERR: Failed initializing TFS instance\n");
+        return -1;
+    }
+
+    mbroker_boxes = malloc(sizeof(box_t) * MAX_BOX_COUNT);
+    boxes_bitmap = malloc(sizeof(allocation_state_t) * MAX_BOX_COUNT);
+
+    for (int i = 0; i < MAX_BOX_COUNT; ++i) {
+        // TODO initialize blocks mutexes here
+    }
+
+    return 0;
+}
+/**
+ * This is the main thread that will handle registration requests by the
+ * various clients.
+ */
 int main(int argc, char **argv) {
     if (argc < 3 || strcmp(argv[1], "--help") == 0) {
         fprintf(stderr, "usage: mbroker <pipename> <max-sessions>\n");
         exit(EXIT_FAILURE);
     }
 
-    // filesystem instance associated with mbroker
-    if (tfs_init(NULL) != 0) {
-        fprintf(stderr, "ERR: Failed initializing TFS\n");
+    if (init_mbroker() != 0) {
+        fprintf(stderr, "ERR: Failed initializing mbroker\n");
         exit(EXIT_FAILURE);
     }
 
+    // create known registration pipe for clients
     if (mkfifo(argv[1], S_IRUSR | S_IWUSR | S_IWGRP) == -1 && errno != EEXIST) {
         fprintf(stderr, "mbroker: couldn't create FIFO %s\n", argv[1]);
         tfs_destroy();
         exit(EXIT_FAILURE);
     }
 
+    // open pipe
     int mbroker_fd = open(argv[1], O_RDONLY);
     if (mbroker_fd == -1) {
         fprintf(stderr, "Error opening pipe %s\n", argv[1]);
@@ -43,17 +64,37 @@ int main(int argc, char **argv) {
         exit(EXIT_FAILURE);
     }
 
+    // workaround SIGPIPE
+    int dummy_fd = open(argv[1], O_WRONLY);
+    if (dummy_fd == -1) {
+        fprintf(stderr, "ERR failed to open pipe %s\n", argv[1]);
+        tfs_destroy();
+        exit(EXIT_FAILURE);
+    }
+
+    // TODO initialize a thread pool and add producer consumer queue thing
+
+    /**
+     * Registration requests expected from the clients
+     *
+     * Request format:
+     * [ op_code (uint8_t) | pipe_name (char[256]) | box_name (char[32]) ]
+     *
+     * Accepted op_codes are handled by the switch case, if invalid op_codes are
+     * provided nothing will be done and an error will be printed to stderr
+     */
     registration_request_t req;
 
+    // this is the main loop
     while (1) {
+        // read requests on registration pipe
         ssize_t ret = read(mbroker_fd, &req, sizeof(req));
         if (ret == 0) {
-            // pipe closed somewhere
-            continue;
+            // pipe closed somewhere, procced
+            // if partial read or no read
         } else if (ret != sizeof(req)) {
             fprintf(stderr, "Partial read or no read\n");
-            tfs_destroy();
-            exit(EXIT_FAILURE);
+            continue;
         }
 
         switch (req.op_code) {
@@ -63,6 +104,7 @@ int main(int argc, char **argv) {
             break;
         case 2:
             fprintf(stderr, "OP_CODE 2: received\n");
+            handle_subscriber(&req);
             break;
         case 3:
             fprintf(stderr, "OP_CODE 3: received\n");
@@ -74,6 +116,7 @@ int main(int argc, char **argv) {
             break;
         case 7:
             fprintf(stderr, "OP_CODE 7: received\n");
+            handle_list(&req);
             break;
         default:
             fprintf(stderr, "Ignoring unknown OP_CODE %d\n", req.op_code);
@@ -86,43 +129,83 @@ int main(int argc, char **argv) {
     return 0;
 }
 
+/**
+ * Ran by thread that handles a publisher connection.
+ * If there is an issue with the specified box the pipe will be closed prompting
+ * a SIGPIPE on the client side.
+ *
+ * Possible issues:
+ * - Box doesn't exist
+ * - Box already as a publisher writting to it
+ */
 int handle_publisher(registration_request_t *req) {
-    // unblock publisher process, even if request is invalid
+    // unlock publisher process, even if request is invalid
     int publisher_fd = open(req->pipe_name, O_RDONLY);
     if (publisher_fd == -1) {
         fprintf(stderr, "ERROR Failed opening publisher pipe\n");
         exit(EXIT_FAILURE);
     }
 
-    int box_fd = tfs_open(req->box_name, 0);
-    // invalid box request
-    if (box_fd == -1) {
+    // get box, if it doesn't exist close the pipe
+    box_t *box = get_box(req->box_name);
+    if (box == NULL) {
         fprintf(stderr, "ERR Box doesn't exist\n");
         close(publisher_fd);
         return -1;
     }
 
+    // check if there is a publisher writting to box
+    if (box->n_publishers == 1) {
+        fprintf(stderr, "ERR publisher already writting to box\n");
+        close(publisher_fd);
+        return -1;
+    }
+
+    // open box file in TFS
+    int box_fd = tfs_open(box->name, TFS_O_APPEND);
+    if (box_fd == -1) {
+        fprintf(stderr, "ERR Couldn't access box (TFS)\n");
+        close(publisher_fd);
+        return -1;
+    }
+
+    /**
+     * Request to be received from client
+     * Request format:
+     *  [ op_code = 9 (uint8_t) | message (char[1024]) )
+     */
     publisher_request_t pub_r;
 
+    // mark new publisher in box
+    box->n_publishers += 1;
+
     while (1) {
+        // read client request
         ssize_t ret = read(publisher_fd, &pub_r, sizeof(pub_r));
-        // pipe closed, end
+        // if EOF received, end session
         if (ret == 0) {
             break;
+            // couldn't read request (partial read or error)
         } else if (ret != sizeof(pub_r)) {
             close(box_fd);
             close(publisher_fd);
             return -1;
         }
-        size_t len = strlen(pub_r.message);
-        ret = tfs_write(box_fd, pub_r.message, len);
-        // bad write (failed) or box full
-        if (ret != len) {
+
+        // write message contents into box
+        ret = write_message(box_fd, pub_r.message);
+        // if unsucessful write
+        if (ret == -1) {
             close(box_fd);
             close(publisher_fd);
             break;
         }
+        // update box info
+        box->size += (size_t)ret + 1;
+        // BOARDCAST COND VARIABLE HERE
     }
+
+    box->n_publishers--;
 
     close(box_fd);
     close(publisher_fd);
@@ -130,42 +213,57 @@ int handle_publisher(registration_request_t *req) {
     return 0;
 }
 
+/**
+ * Handle a manager session to create or delete boxes and responds back to the
+ * client.
+ *
+ * Response to the manager client will be sent over the pipe.
+ * Possible error messages are:
+ * - Box already exists if trying to create a duplicate one
+ * - Box doesn't exist if trying to delete a non existing box
+ *
+ * All other possible errors are not in the scope of the project
+ */
 int handle_manager(registration_request_t *req) {
+    // open pipe
     int manager_fd = open(req->pipe_name, O_WRONLY);
     if (manager_fd == -1) {
         fprintf(stderr, "ERROR Failed opening manager pipe\n");
-        exit(EXIT_FAILURE);
+        return -1;
     }
 
+    /**
+     * Response to be sent to the client.
+     *
+     * Response format:
+     * [ op_code (uint8_t) | return_code (uint32_t) | error_message(char[1024])
+     * ]
+     *
+     * op_code = 4 if box creation || op_code = 6 if box deletion
+     */
     manager_response_t resp;
 
+    // initialize response struct
     if (manager_response_init(&resp, req->op_code + 1, 0, NULL) != 0) {
         fprintf(stderr, "ERROR Failed creating response\n");
-        exit(EXIT_FAILURE);
+        close(manager_fd);
+        return -1;
     }
 
+    // do operation (create or delete)
     if (req->op_code == CREATE_BOX_OP) {
-        int fd = tfs_open(req->box_name, TFS_O_CREAT);
-        if (fd == -1) {
-            manager_response_set_error_msg(&resp, "Couldn't create box\n");
-            resp.ret_code = -1;
-        } else {
-            tfs_close(fd);
+        resp.ret_code = create_box(&resp, req->box_name);
+        if (resp.ret_code == 0) {
+            box_count++;
         }
     } else {
-        int fd = tfs_open(req->box_name, 0);
-        if (fd == -1) {
-            manager_response_set_error_msg(&resp, "Box doesn't exist\n");
-            resp.ret_code = -1;
-        } else {
-            tfs_close(fd);
-            if (tfs_unlink(req->box_name) != 0) {
-                resp.ret_code = -1;
-                manager_response_set_error_msg(&resp, "Failed removing box\n");
-            }
+        resp.ret_code = delete_box(&resp, req->box_name);
+        if (resp.ret_code == 0) {
+            box_count--;
         }
     }
 
+    // send response to the client
     if (manager_response_send(manager_fd, &resp) != 0) {
         fprintf(stderr, "ERROR Failed sending response\n");
         exit(EXIT_FAILURE);
@@ -175,3 +273,119 @@ int handle_manager(registration_request_t *req) {
 
     return 0;
 }
+
+/**
+ * Ran by thread that will handle a subscriber session
+ *
+ * If specified box doesn't exist, the pipe will be closed
+ */
+int handle_subscriber(registration_request_t *req) {
+    // open pipe to send responses
+    int sub_fd = open(req->pipe_name, O_WRONLY);
+    if (sub_fd == -1) {
+        fprintf(stderr, "ERR couldn't open subscriber pipe %s\n",
+                req->pipe_name);
+    }
+
+    // get box
+    box_t *box = get_box(req->box_name);
+    if (box == NULL) {
+        fprintf(stderr, "ERR box doesn't exist\n");
+        close(sub_fd);
+        return -1;
+    }
+
+    // open file in TFS
+    int box_fd = tfs_open(box->name, 0);
+    if (box_fd == -1) {
+        fprintf(stderr, "ERR Couldn't open box (TFS)\n");
+        close(sub_fd);
+        return -1;
+    }
+
+    // add a subscriber to box
+    box->n_subscribers++;
+    // response to be sent to client
+    subscriber_response_t sub_resp;
+
+    char BUFF[MESSAGE_LENGTH];
+    size_t total_read = 0;
+    while (1) {
+        // read a message from the box into BUFF
+        if (total_read < box->size) {
+            ssize_t ret = read_message(box_fd, BUFF);
+            if (ret == -1) {
+                // TO DO add a conditional variable thingy somewhere in here
+                // (inside the loop) continues looping untill SIGPIPE recieved
+                break;
+            }
+
+            total_read += (size_t)ret;
+
+            // initialize client response
+            if (subscriber_response_init(&sub_resp, BUFF) != 0) {
+                fprintf(stderr,
+                        "ERR Couldn't initialize subscriber response\n");
+                break;
+            }
+
+            // send response
+            int r = subscriber_response_send(sub_fd, &sub_resp);
+            if (r == EPIPE) {
+                fprintf(stderr, "Subscriber session closed by client\n");
+                break;
+            } else if (r != 0) {
+                fprintf(stderr, "ERR Failed to send response to client\n");
+                break;
+            }
+        } else {
+            break;
+            // LOCK cond variable
+        }
+    }
+
+    close(sub_fd);
+    box->n_subscribers--;
+
+    return 0;
+}
+
+int handle_list(registration_request_t *req) {
+    int manager_fd = open(req->pipe_name, O_WRONLY);
+    if (manager_fd == -1) {
+        fprintf(stderr, "ERR Failed opening pipe %s\n", req->pipe_name);
+        exit(EXIT_FAILURE);
+    }
+
+    return 0;
+}
+
+/**
+ * Return an mbroker's box with given string
+ *
+ */
+box_t *get_box(char *name) {
+    for (int i = 0; i < MAX_BOX_COUNT; ++i) {
+        if (boxes_bitmap[i] == TAKEN) {
+            if (strcmp(name, mbroker_boxes[i].name + 1) == 0) {
+                return &mbroker_boxes[i];
+            }
+        }
+    }
+
+    return NULL;
+}
+
+/**
+ * Return the array storing all mbroker's boxes
+ *
+ * Declared so box.c has access to the data
+ */
+box_t *get_boxes_list() { return mbroker_boxes; }
+
+/**
+ * Return the bitmap of the boxes in mbroker
+ *
+ * Declared so box.c has access to the data
+ */
+allocation_state_t *get_bitmap() { return boxes_bitmap; }
