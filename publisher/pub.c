@@ -11,10 +11,22 @@
 #include "logging.h"
 #include "requests.h"
 
+void sigpipe_handler(int sig) {
+    (void)sig;
+    // closed pipes are handled by EPIPE return value
+    // this is used simply to overwrite default SIGPIPE behaviour
+}
+
 int main(int argc, char **argv) {
     if (argc < 4 || strcmp(argv[1], "--help") == 0) {
         fprintf(stderr, "usage: pub <register_pipe_name> <pipe_name> \
                 <box_name>\n");
+        exit(EXIT_FAILURE);
+    }
+
+    // overwrite default SIGPIPE handler
+    if (signal(SIGPIPE, sigpipe_handler) == SIG_ERR) {
+        fprintf(stderr, "Failed to define SIGPIE handler\n");
         exit(EXIT_FAILURE);
     }
 
@@ -95,8 +107,17 @@ int main(int argc, char **argv) {
         }
 
         // send request to mbroker
-        if (publisher_request_send(pub_fd, &p_req) != 0) {
-            fprintf(stderr, "ERR couldn't write or partial write to FIFO %s\n", req.pipe_name);
+        int ret = publisher_request_send(pub_fd, &p_req);
+        if (ret != 0) {
+            if (ret == -1) {
+                fprintf(
+                    stderr,
+                    "ERR Pipe was closed by mbroker, operation was invalid\n");
+            } else {
+                fprintf(stderr,
+                        "ERR couldn't write or partial write to FIFO %s\n",
+                        req.pipe_name);
+            }
             close(pub_fd);
             if (unlink(argv[2]) != 0) {
                 fprintf(stderr, "ERR failed deleting FIFO %s", argv[2]);

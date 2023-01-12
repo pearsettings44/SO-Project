@@ -99,12 +99,12 @@ int publisher_request_send(int fd, publisher_request_t *req) {
 
     if (ret == -1) {
         if (errno == EPIPE) {
-            return EPIPE;
-        } else {
             return -1;
+        } else {
+            return -2;
         }
     } else if (ret != sizeof(*req)) {
-        return -2;
+        return -3;
     }
 
     return 0;
