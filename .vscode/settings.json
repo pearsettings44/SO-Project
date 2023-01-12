@@ -8,6 +8,10 @@
         "box.h": "c",
         "state.h": "c",
         "fcntl.h": "c",
-        "stdint.h": "c"
+        "stdint.h": "c",
+        "stdlib.h": "c",
+        "types.h": "c",
+        "unistd.h": "c",
+        "pthread.h": "c"
     }
 }

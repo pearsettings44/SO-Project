@@ -36,6 +36,7 @@ int box_initialize(box_t *box, char *name) {
  * Returns 0 if successful and -1 if failed
  */
 int create_box(manager_response_t *resp, char *name) {
+    // name = boxx
     box_t new_box;
 
     if (box_initialize(&new_box, name) != 0) {

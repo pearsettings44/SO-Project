@@ -2,6 +2,7 @@
 #define BOX_H
 
 #include "response.h"
+#include <pthread.h>
 #include <stdint.h>
 #include <unistd.h>
 
@@ -12,6 +13,8 @@ struct box_t {
     uint64_t n_publishers;
     uint64_t n_subscribers;
     size_t size;
+    pthread_cond_t condition;
+    pthread_mutex_t mutex;
 };
 
 typedef struct box_t box_t;

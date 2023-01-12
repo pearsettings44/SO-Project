@@ -119,11 +119,24 @@ int list_boxes(char **args) {
         exit(EXIT_FAILURE);
     }
 
-    close(mbroker_fd);
-    if (unlink(req.pipe_name) != 0) {
-        fprintf(stderr, "ERR failed to delete FIFO %s\n", req.pipe_name);
-        exit(EXIT_FAILURE);
+
+    while (1) {
+        // receber resposta
+        // guardar box para array
+        // ver se é ultima -> se for a última stop reading
     }
+
+
+
+
+    // close(mbroker_fd);
+    // if (unlink(req.pipe_name) != 0) {
+    //     fprintf(stderr, "ERR failed to delete FIFO %s\n", req.pipe_name);
+    //     exit(EXIT_FAILURE);
+    // }
+
+    // read = (fd, resp, sizeof(resp);
+    // printf(resp.wtv));)
 
     exit(EXIT_SUCCESS);
 }
