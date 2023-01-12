@@ -12,6 +12,7 @@
         "stdlib.h": "c",
         "types.h": "c",
         "unistd.h": "c",
-        "pthread.h": "c"
+        "pthread.h": "c",
+        "string.h": "c"
     }
 }

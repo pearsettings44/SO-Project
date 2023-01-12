@@ -3,6 +3,7 @@
 #include "box.h"
 #include "logging.h"
 #include "operations.h"
+#include "wrapper.h"
 #include <errno.h>
 #include <fcntl.h>
 #include <pthread.h>
@@ -76,6 +77,7 @@ int mbroker_destroy() {
 
     return 0;
 }
+
 /**
  * This is the main thread that will handle registration requests by the
  * various clients.
@@ -114,8 +116,6 @@ int main(int argc, char **argv) {
         exit(EXIT_FAILURE);
     }
 
-    // lançar threads
-
     /**
      * Registration requests expected from the clients
      *
@@ -142,7 +142,7 @@ int main(int argc, char **argv) {
 
         // insert_queue(req);
 
-        long unsigned int tids[2];
+        pthread_t tids[2];
 
         switch (req.op_code) {
         case 1:
@@ -195,7 +195,7 @@ int handle_publisher(registration_request_t *req) {
     int publisher_fd = open(req->pipe_name, O_RDONLY);
     if (publisher_fd == -1) {
         fprintf(stderr, "ERROR Failed opening publisher pipe\n");
-        exit(EXIT_FAILURE);
+        return -1;
     }
 
     // get box, if it doesn't exist close the pipe
@@ -207,8 +207,7 @@ int handle_publisher(registration_request_t *req) {
     }
 
     // lock box mutex
-    if (pthread_mutex_lock(&box->mutex) != 0) {
-        fprintf(stderr, "ERR couldn't lock mutex\n");
+    if (mutex_lock(&box->mutex) != 0) {
         close(publisher_fd);
         return -1;
     }
@@ -239,8 +238,7 @@ int handle_publisher(registration_request_t *req) {
     box->n_publishers += 1;
 
     // unlock box mutex
-    if (pthread_mutex_unlock(&box->mutex) != 0) {
-        fprintf(stderr, "ERR couldn't unlock mutex\n");
+    if (mutex_unlock(&box->mutex) != 0) {
         close(publisher_fd);
         return -1;
     }
@@ -251,16 +249,14 @@ int handle_publisher(registration_request_t *req) {
         // if EOF received, end session
         if (ret == 0) {
             break;
-            // couldn't read request (partial read or error)
+        // couldn't read request (partial read or error)
         } else if (ret != sizeof(pub_r)) {
-            close(box_fd);
-            close(publisher_fd);
-            return -1;
+            break;
         }
 
-        if (pthread_mutex_lock(&box->mutex) != 0) {
-            fprintf(stderr, "ERR couldn't lock mutex\n");
-            close(box_fd);
+        // lock box before writting operation
+        if (mutex_lock(&box->mutex) != 0) {
+            tfs_close(box_fd);
             close(publisher_fd);
             return -1;
         }
@@ -269,23 +265,41 @@ int handle_publisher(registration_request_t *req) {
         ret = write_message(box_fd, pub_r.message);
         // if unsucessful write
         if (ret == -1) {
-            close(box_fd);
-            close(publisher_fd);
+            mutex_unlock(&box->mutex);
             break;
         }
         // update box info
         box->size += (size_t)ret + 1;
-        if (pthread_mutex_unlock(&box->mutex) != 0) {
-            fprintf(stderr, "ERR couldn't unlock mutex\n");
-            close(box_fd);
+        if (mutex_unlock(&box->mutex) != 0) {
+            tfs_close(box_fd);
             close(publisher_fd);
+            return -1;
         }
-        pthread_cond_broadcast(&box->condition);
+        // signal threads waiting on this box's conditional variable
+        if (cond_broadcast(&box->condition) != 0) {
+            tfs_close(box_fd);
+            close(publisher_fd);
+            return -1;
+        }
     }
 
-    box->n_publishers--;
 
-    close(box_fd);
+    // lock mutex for update on publishers count
+    if (mutex_lock(&box->mutex) != 0) {
+        tfs_close(box_fd);
+        close(publisher_fd);
+        return -1;
+    }
+    box->n_publishers--;
+    // unlock mutex
+    if (mutex_unlock(&box->mutex) != 0) {
+        tfs_close(box_fd);
+        close(publisher_fd);
+        return -1;
+    }
+
+    tfs_close(box_fd);
+    // close pipe
     close(publisher_fd);
 
     return 0;
@@ -363,6 +377,7 @@ int handle_subscriber(registration_request_t *req) {
     if (sub_fd == -1) {
         fprintf(stderr, "ERR couldn't open subscriber pipe %s\n",
                 req->pipe_name);
+        return -1;
     }
 
     // get box
@@ -370,7 +385,7 @@ int handle_subscriber(registration_request_t *req) {
     if (box == NULL) {
         fprintf(stderr, "ERR box doesn't exist\n");
         close(sub_fd);
-        exit(EXIT_FAILURE);
+        return -1;
     }
 
     // open file in TFS
@@ -378,24 +393,24 @@ int handle_subscriber(registration_request_t *req) {
     if (box_fd == -1) {
         fprintf(stderr, "ERR Couldn't open box (TFS)\n");
         close(sub_fd);
-        exit(EXIT_FAILURE);
+        return -1;
     }
 
     // lock box mutex
-    if (pthread_mutex_lock(&box->mutex) != 0) {
-        fprintf(stderr, "ERR couldn't lock box mutex\n");
+    if (mutex_lock(&box->mutex) != 0) {
         close(sub_fd);
-        exit(EXIT_FAILURE);
+        tfs_close(box_fd);
+        return -1;
     }
 
     // add a subscriber to box
     box->n_subscribers++;
 
     // unlock box mutex
-    if (pthread_mutex_unlock(&box->mutex) != 0) {
-        fprintf(stderr, "ERR couldn't unlock box mutex\n");
+    if (mutex_unlock(&box->mutex) != 0) {
         close(sub_fd);
-        exit(EXIT_FAILURE);
+        tfs_close(box_fd);
+        return -1;
     }
 
     // response to be sent to client
@@ -404,9 +419,10 @@ int handle_subscriber(registration_request_t *req) {
     char BUFF[MESSAGE_LENGTH];
     size_t total_read = 0;
     while (1) {
-        if (pthread_mutex_lock(&box->mutex) != 0) {
-            fprintf(stderr, "ERR couldn't lock box mutex\n");
-            // do
+        if (mutex_lock(&box->mutex) != 0) {
+            close(sub_fd);
+            tfs_close(box_fd);
+            return -1;
         }
         // read a message from the box into BUFF
         if (total_read < box->size) {
@@ -430,6 +446,7 @@ int handle_subscriber(registration_request_t *req) {
             int r = subscriber_response_send(sub_fd, &sub_resp);
 
             if (r != 0) {
+                // if EPIPE
                 if (r == -1) {
                     fprintf(stderr, "Client ended the session\n");
                 } else {
@@ -440,28 +457,31 @@ int handle_subscriber(registration_request_t *req) {
                 break;
             }
 
-            if (pthread_mutex_unlock(&box->mutex) != 0) {
-                fprintf(stderr, "ERR couldn't unlock mutex");
-                break;
+            if (mutex_unlock(&box->mutex) != 0) {
+                close(sub_fd);
+                tfs_close(box_fd);
+                return -1;
             }
         } else {
-            // COND_WAIT
-            if (pthread_cond_wait(&box->condition, &box->mutex) != 0) {
-                fprintf(stderr, "ERR couldn't wait on condition\n");
-                break;
+            if (cond_wait(&box->condition, &box->mutex) != 0) {
+                close(sub_fd);
+                tfs_close(box_fd);
+                return -1;
             }
-            if (pthread_mutex_unlock(&box->mutex) != 0) {
-                fprintf(stderr, "ERR couldn't unlock mutex");
-                break;
+            if (mutex_unlock(&box->mutex) != 0) {
+                close(sub_fd);
+                tfs_close(box_fd);
+                return -1;
             }
         }
     }
 
-    close(sub_fd);
     box->n_subscribers--;
+    close(sub_fd);
+    tfs_close(box_fd);
 
-    if (pthread_mutex_unlock(&box->mutex) != 0) {
-        fprintf(stderr, "ERR couldn't unlock mutex");
+    if (mutex_unlock(&box->mutex) != 0) {
+        return -1;
     }
 
     return 0;
