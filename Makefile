@@ -7,7 +7,7 @@ CC = gcc
 LD ?= gcc
 
 # space separated list of directories with header files
-INCLUDE_DIRS := fs2 protocol utils producer-consumer .
+INCLUDE_DIRS := fs2 protocol utils mbroker producer-consumer .
 # this creates a space separated list of -I<dir> where <dir> is each of the values in INCLUDE_DIRS
 INCLUDES = $(addprefix -I, $(INCLUDE_DIRS))
 
@@ -22,7 +22,7 @@ TEST_SOURCES  := $(wildcard tests/*.c)
 TEST_TARGETS  := $(TEST_SOURCES:.c=)
 
 MBROKER_SOURCES  := $(wildcard mbroker/*.c)
-FS_SOURCES  := $(wildcard fs/*.c)
+FS_SOURCES  := $(wildcard fs2/*.c)
 MANAGER_SOURCES  := $(wildcard manager/*.c)
 PRODUCER_CONSUMER_SOURCES  := $(wildcard producer-consumer/*.c)
 PROTOCOL_SOURCES  := $(wildcard protocol/*.c)

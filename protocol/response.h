@@ -12,9 +12,20 @@ struct manager_response_t {
     char error_message[ERROR_MESSAGE_LENGTH];
 };
 
+struct list_manager_response_t {
+    uint8_t op_code;
+    uint8_t last_flag;
+    char box_name[MAX_BOX_NAME];
+    uint64_t box_size;
+    uint64_t n_publishers;
+    uint64_t n_subscribers;
+};
+
 typedef struct manager_response_t manager_response_t;
 // publisher and subscriber's request have the same policy
 typedef struct publisher_request_t subscriber_response_t;
+
+typedef struct list_manager_response_t list_manager_response_t;
 
 int manager_response_init(manager_response_t *, uint8_t op_code,
                           int32_t ret_code, char *msg);

@@ -30,6 +30,10 @@ int registration_request_init(registration_request_t *req, uint8_t op_code,
         return -2;
     }
 
+    // truncate if necessary
+    req->pipe_name[MAX_PIPE_PATHNAME - 1] = 0;
+    req->box_name[MAX_BOX_NAME - 1] = 0;
+
     return 0;
 }
 
@@ -67,6 +71,9 @@ int registration_request_mkfifo(registration_request_t *req) {
     return 0;
 }
 
+/**
+ * Initializes a registration request to be made to mbroker from the clients.
+ */
 int publisher_request_init(publisher_request_t *req, char *message) {
     req->op_code = PUBLISH_OP_CODE;
 
@@ -77,36 +84,27 @@ int publisher_request_init(publisher_request_t *req, char *message) {
     return 0;
 }
 
+/**
+ * Sends a publisher request to mbroker using fd o mbroker's FIFO
+ *
+ * Returns 0 upon success and negative values upon failure
+ *
+ * Error returns:
+ *  -1 if EPIPE error (closed reading END pipe)
+ *  -2 if other fail occurred writting to FIFO
+ *  -3 if partial write
+ */
 int publisher_request_send(int fd, publisher_request_t *req) {
     ssize_t ret = write(fd, req, sizeof(*req));
 
     if (ret == -1) {
-        return -1;
+        if (errno == EPIPE) {
+            return EPIPE;
+        } else {
+            return -1;
+        }
     } else if (ret != sizeof(*req)) {
         return -2;
-    }
-
-    return 0;
-}
-
-int manager_request_init(registration_request_t *req, uint8_t op_code,
-                         char *pipe_name, char *box) {
-    memset(req, 0, sizeof(*req));
-
-    req->op_code = op_code;
-
-    if (strcpy(req->pipe_name, pipe_name) == NULL) {
-        return -1;
-    }
-
-    if (box != NULL) {
-        char tmp[strlen(box) + 1];
-        tmp[0] = '/';
-        strcat(tmp, box);
-        box = tmp;
-        if (strcpy(req->box_name, box) == NULL) {
-            return -2;
-        }
     }
 
     return 0;

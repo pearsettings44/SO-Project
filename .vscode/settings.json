@@ -2,6 +2,12 @@
     "files.associations": {
         "stdio.h": "c",
         "requests.h": "c",
-        "logging.h": "c"
+        "logging.h": "c",
+        "stat.h": "c",
+        "operations.h": "c",
+        "box.h": "c",
+        "state.h": "c",
+        "fcntl.h": "c",
+        "stdint.h": "c"
     }
 }

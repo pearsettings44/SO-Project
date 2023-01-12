@@ -40,6 +40,4 @@ int registration_request_mkfifo(registration_request_t *req);
 int publisher_request_init(publisher_request_t *req, char *message);
 int publisher_request_send(int fd, publisher_request_t *req);
 
-int manager_request_init(registration_request_t *req, uint8_t op_code,
-                         char *pipe_name, char *box_name);
 #endif
