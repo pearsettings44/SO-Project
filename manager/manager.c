@@ -2,12 +2,12 @@
 #include "requests.h"
 #include "response.h"
 #include <fcntl.h>
+#include <mbroker.h>
 #include <stdbool.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/types.h>
 #include <unistd.h>
-#include <stdlib.h>
-#include <mbroker.h>
 
 static void print_usage() {
     fprintf(stderr,
@@ -139,7 +139,10 @@ int list_boxes(char **args) {
     while (1) {
         ssize_t ret = read(man_fd, &man_resp, sizeof(man_resp));
         // it failed to read
-        if (ret != sizeof(man_resp)) {
+        if (ret == 0) {
+            fprintf(stdout, "NO BOXES FOUND\n");
+            break;
+        } else if (ret != sizeof(man_resp)) {
             fprintf(stderr, "ERR couldn't read response from pipe\n");
             break;
         }
@@ -154,7 +157,7 @@ int list_boxes(char **args) {
         }
     }
 
-    //sort boxes by name
+    // sort boxes by name
     int compare(const void *a, const void *b) {
         list_manager_response_t *box_a = (list_manager_response_t *)a;
         list_manager_response_t *box_b = (list_manager_response_t *)b;
@@ -162,17 +165,11 @@ int list_boxes(char **args) {
     }
     qsort(boxes, (size_t)box_count, sizeof(list_manager_response_t), compare);
 
-
-    // no boxes
-    if (box_count == 0) {
-        fprintf(stdout, "NO BOXES FOUND\n");
-    } else {
-        // Loop through boxes and print them;
-        for (int i = 0; i < box_count; i++) {
-            list_manager_response_t box = boxes[i];
-            fprintf(stdout, "%s %zu %zu %zu\n", box.box_name + 1, box.box_size,
-                    box.n_publishers, box.n_subscribers);
-        }
+    // Loop through boxes and print them;
+    for (int i = 0; i < box_count; i++) {
+        list_manager_response_t box = boxes[i];
+        fprintf(stdout, "%s %zu %zu %zu\n", box.box_name + 1, box.box_size,
+                box.n_publishers, box.n_subscribers);
     }
 
     // close(mbroker_fd);
