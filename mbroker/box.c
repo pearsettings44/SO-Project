@@ -11,6 +11,7 @@
  */
 int box_initialize(box_t *box, char *name) {
     memset(box, 0, sizeof(*box));
+
     // prepend / to string
     size_t len = strlen(name);
     char tmp[len + 1];
@@ -23,6 +24,8 @@ int box_initialize(box_t *box, char *name) {
     if (strcpy(box->name, tmp) == NULL) {
         return -1;
     }
+
+    box->alloc_state = TAKEN;
 
     return 0;
 }
@@ -70,8 +73,7 @@ int create_box(manager_response_t *resp, char *name) {
      * there is space for a box
      */
     for (int i = 0; i < MAX_BOX_COUNT; ++i) {
-        if (bitmap[i] == FREE) {
-            bitmap[i] = TAKEN;
+        if (boxes[i].alloc_state == FREE) {
             boxes[i] = new_box;
             break;
         }
@@ -111,16 +113,15 @@ int delete_box(manager_response_t *resp, char *name) {
     }
 
     box_t *boxes = get_boxes_list();
-    allocation_state_t *bitmap = get_bitmap();
     /**
      * Delete given block, this should never fail because it relies on
      * TFS checks (for a file existance), if the function gets here,
      * the block exists
      */
     for (int i = 0; i < MAX_BOX_COUNT; ++i) {
-        if (bitmap[i] == TAKEN) {
+        if (boxes[i].alloc_state == TAKEN) {
             if (strcmp(box.name, boxes[i].name) == 0) {
-                bitmap[i] = FREE;
+                boxes[i].alloc_state = FREE;
                 break;
             }
         }

@@ -2,11 +2,8 @@
 #include "requests.h"
 #include "response.h"
 #include <fcntl.h>
-<<<<<<< HEAD
 #include <mbroker.h>
-=======
 #include "mbroker.h"
->>>>>>> origin/main
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>

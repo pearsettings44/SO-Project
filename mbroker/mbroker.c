@@ -483,6 +483,7 @@ int handle_subscriber(registration_request_t *req) {
             // if EPIPE
             if (r == -1) {
                 fprintf(stderr, "Client ended the session\n");
+                signal(SIGPIPE, sigpipe_handler);
             } else {
                 fprintf(stderr,
                         "ERR Couldn't write or patial write to FIFO %s\n",
