@@ -2,9 +2,12 @@
 #include "requests.h"
 #include "response.h"
 #include <fcntl.h>
+#include <stdbool.h>
 #include <string.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <stdlib.h>
+#include <mbroker.h>
 
 static void print_usage() {
     fprintf(stderr,
@@ -119,15 +122,58 @@ int list_boxes(char **args) {
         exit(EXIT_FAILURE);
     }
 
-
-    while (1) {
-        // receber resposta
-        // guardar box para array
-        // ver se é ultima -> se for a última stop reading
+    // open communication FIFO
+    int man_fd = open(req.pipe_name, O_RDONLY);
+    if (man_fd == -1) {
+        fprintf(stderr, "ERR failed opening FIFO %s\n", args[2]);
+        if (unlink(args[2]) != 0) {
+            fprintf(stderr, "ERR failed deleting FIFO %s\n", args[2]);
+        }
+        exit(EXIT_FAILURE);
     }
 
+    list_manager_response_t man_resp;
+    // array to store the names of the boxes
+    list_manager_response_t boxes[MAX_BOX_COUNT];
+    int box_count = 0;
+    while (1) {
+        ssize_t ret = read(man_fd, &man_resp, sizeof(man_resp));
+        // it failed to read
+        if (ret != sizeof(man_resp)) {
+            fprintf(stderr, "ERR couldn't read response from pipe\n");
+            break;
+        }
+
+        // add box to boxes array
+        boxes[box_count] = man_resp;
+        box_count++;
+
+        // if there are no more boxes to read
+        if (man_resp.last_flag == 1) {
+            break;
+        }
+    }
+
+    //sort boxes by name
+    int compare(const void *a, const void *b) {
+        list_manager_response_t *box_a = (list_manager_response_t *)a;
+        list_manager_response_t *box_b = (list_manager_response_t *)b;
+        return strcmp(box_a->box_name, box_b->box_name);
+    }
+    qsort(boxes, (size_t)box_count, sizeof(list_manager_response_t), compare);
 
 
+    // no boxes
+    if (box_count == 0) {
+        fprintf(stdout, "NO BOXES FOUND\n");
+    } else {
+        // Loop through boxes and print them;
+        for (int i = 0; i < box_count; i++) {
+            list_manager_response_t box = boxes[i];
+            fprintf(stdout, "%s %zu %zu %zu\n", box.box_name + 1, box.box_size,
+                    box.n_publishers, box.n_subscribers);
+        }
+    }
 
     // close(mbroker_fd);
     // if (unlink(req.pipe_name) != 0) {
