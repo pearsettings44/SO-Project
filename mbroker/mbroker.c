@@ -257,7 +257,7 @@ int handle_publisher(registration_request_t *req) {
         // if EOF received, end session
         if (ret == 0) {
             break;
-        // couldn't read request (partial read or error)
+            // couldn't read request (partial read or error)
         } else if (ret != sizeof(pub_r)) {
             break;
         }
@@ -290,7 +290,6 @@ int handle_publisher(registration_request_t *req) {
             return -1;
         }
     }
-
 
     // lock mutex for update on publishers count
     if (mutex_lock(&box->mutex) != 0) {
@@ -350,17 +349,21 @@ int handle_manager(registration_request_t *req) {
         return -1;
     }
 
-    // do operation (create or delete)
-    if (req->op_code == CREATE_BOX_OP) {
+    switch (req->op_code) {
+    case CREATE_BOX_OP:
         resp.ret_code = create_box(&resp, req->box_name);
         if (resp.ret_code == 0) {
             box_count++;
         }
-    } else {
+        break;
+    case DELETE_BOX_OP:
         resp.ret_code = delete_box(&resp, req->box_name);
         if (resp.ret_code == 0) {
             box_count--;
         }
+        break;
+    default:
+        break;
     }
 
     // send response to the client
@@ -493,6 +496,36 @@ int handle_list(registration_request_t *req) {
         fprintf(stderr, "ERR Failed opening pipe %s\n", req->pipe_name);
         exit(EXIT_FAILURE);
     }
+
+    box_t *boxes = get_boxes_list();
+    allocation_state_t *bitmap = get_bitmap();
+
+    // iterate through boxes and send them to the manager
+    int j = 0;
+    for (int i = 0; i < MAX_BOX_COUNT; i++) {
+        if (j == box_count) {
+            break;
+        }
+        if (bitmap[i] == TAKEN) {
+            j++;
+            list_manager_response_t resp;
+            box_t box = boxes[i];
+            uint8_t last = (j == box_count) ? 1 : 0;
+            if (list_manager_response_init(&resp, last, box.name,
+                                           box.size, box.n_publishers,
+                                           box.n_subscribers) != 0) {
+                fprintf(stderr, "ERROR Failed initializing response\n");
+                exit(EXIT_FAILURE);
+            }
+
+            if (list_manager_response_send(manager_fd, &resp) != 0) {
+                fprintf(stderr, "ERROR Failed sending response\n");
+                exit(EXIT_FAILURE);
+            }
+        }
+    }
+
+    close(manager_fd);
 
     return 0;
 }

@@ -26,13 +26,15 @@ int registration_request_init(registration_request_t *req, uint8_t op_code,
         return -1;
     }
 
-    if (strcpy(req->box_name, box_name) == NULL) {
-        return -2;
+    if (box_name != NULL) {
+        if (strcpy(req->box_name, box_name) == NULL) {
+            return -2;
+        }
+        req->box_name[MAX_BOX_NAME - 1] = 0;
     }
 
     // truncate if necessary
     req->pipe_name[MAX_PIPE_PATHNAME - 1] = 0;
-    req->box_name[MAX_BOX_NAME - 1] = 0;
 
     return 0;
 }
