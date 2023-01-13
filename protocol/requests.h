@@ -18,13 +18,13 @@
 #define MAX_BOX_NAME 32
 #define MESSAGE_LENGTH 1024
 
-struct registration_request_t {
+struct __attribute__((__packed__)) registration_request_t {
     uint8_t op_code;
     char pipe_name[MAX_PIPE_PATHNAME];
     char box_name[MAX_BOX_NAME];
 };
 
-struct publisher_request_t {
+struct __attribute__((__packed__)) publisher_request_t {
     uint8_t op_code;
     char message[MESSAGE_LENGTH];
 };

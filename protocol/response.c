@@ -4,10 +4,10 @@
 
 #include "response.h"
 #include <errno.h>
+#include <response.h>
 #include <string.h>
 #include <sys/types.h>
 #include <unistd.h>
-#include <response.h>
 
 /**
  * Initialize a response sent from mbroker to a manager client.
@@ -30,10 +30,9 @@ int manager_response_init(manager_response_t *resp, uint8_t op_code,
     return 0;
 }
 
-int list_manager_response_init(list_manager_response_t *resp,
-                               uint8_t last_flag, char *box_name,
-                               uint64_t box_size, uint64_t n_publishers,
-                               uint64_t n_subscribers) {
+int list_manager_response_init(list_manager_response_t *resp, uint8_t last_flag,
+                               char *box_name, uint64_t box_size,
+                               uint64_t n_publishers, uint64_t n_subscribers) {
     memset(resp, 0, sizeof(*resp));
 
     resp->op_code = LIST_MANAGER_OP;

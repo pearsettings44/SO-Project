@@ -7,13 +7,13 @@
 #define ERROR_MESSAGE_LENGTH 1024
 #define LIST_MANAGER_OP 8
 
-struct manager_response_t {
+struct __attribute__((__packed__)) manager_response_t {
     uint8_t op_code;
     int32_t ret_code;
     char error_message[ERROR_MESSAGE_LENGTH];
 };
 
-struct list_manager_response_t {
+struct __attribute__((__packed__)) list_manager_response_t {
     uint8_t op_code;
     uint8_t last_flag;
     char box_name[MAX_BOX_NAME];
@@ -33,10 +33,9 @@ int manager_response_init(manager_response_t *, uint8_t op_code,
 int manager_response_send(int fd, manager_response_t *resp);
 int manager_response_set_error_msg(manager_response_t *, char *msg);
 
-int list_manager_response_init(list_manager_response_t *resp,
-                               uint8_t last_flag, char *box_name,
-                               uint64_t box_size, uint64_t n_publishers,
-                               uint64_t n_subscribers);
+int list_manager_response_init(list_manager_response_t *resp, uint8_t last_flag,
+                               char *box_name, uint64_t box_size,
+                               uint64_t n_publishers, uint64_t n_subscribers);
 int list_manager_response_send(int fd, list_manager_response_t *resp);
 
 int subscriber_response_init(subscriber_response_t *resp, char *message);

@@ -10,6 +10,7 @@
 #define MAX_BOX_COUNT 1024
 #define PUB_PIPE_PATHNAME 256
 
+int requests_handler(registration_request_t *);
 int handle_publisher(registration_request_t *);
 int handle_subscriber(registration_request_t *);
 int handle_manager(registration_request_t *);

@@ -27,10 +27,14 @@ void sigpipe_handler(int sig) {
 }
 
 // worked thread 
-void *worker_thread(void *queue) {
-    while (1) {
-        request_handler(pcq_dequeue((pc_queue_t *)queue));
-    }
+void *worker_thread_fn(void *queue) {
+    // get a request to handle
+    registration_request_t *req = pcq_dequeue((pc_queue_t *)queue);
+    // handle request
+    requests_handler(req);
+    // free memory
+    free(req);
+    return NULL;
 }
 
 int init_mbroker() {
@@ -115,13 +119,22 @@ int main(int argc, char **argv) {
         exit(EXIT_FAILURE);
     }
 
+    int sessions = atoi(argv[2]);
+
     pc_queue_t requests_queue;
 
-    if (pcq_create(&requests_queue, (size_t)atoi(argv[2])) != 0) {
+    if (pcq_create(&requests_queue, (size_t)sessions) != 0) {
         fprintf(stderr, "ERR failed to create requests queue \n");
         mbroker_destroy();
         exit(EXIT_FAILURE);
     }
+
+    pthread_t tid[sessions];
+
+    for (unsigned int i = 0; i < sessions; ++i) {
+        pthread_create(&tid[i], NULL, worker_thread_fn, (void *)&requests_queue);
+    }
+
 
     /**
      * Registration requests expected from the clients
@@ -147,21 +160,32 @@ int main(int argc, char **argv) {
             fprintf(stderr, "ERR Failed to read request\n");
             continue;
         }
+        pcq_enqueue(&requests_queue, req);
+    }
 
-        // insert_queue(req);
+    for (int i = 0; i < sessions; ++i) {
+        pthread_join(tid[i], NULL);
+    }
 
-        pthread_t tids[2];
+    if (mbroker_destroy() != 0) {
+        fprintf(stderr, "ERR Failed terminating mbroker\n");
+        exit(EXIT_FAILURE);
+    }
 
-        switch (req->op_code) {
+    exit(EXIT_SUCCESS);
+}
+
+int requests_handler(registration_request_t *req) {
+    switch (req->op_code) {
         case 1:
             fprintf(stderr, "OP_CODE 1: received\n");
             // handle_publisher(&req);
-            pthread_create(&tids[0], NULL, pub_thread, (void *)req);
+            handle_publisher(req);
             break;
         case 2:
             fprintf(stderr, "OP_CODE 2: received\n");
             // handle_subscriber(&req);
-            pthread_create(&tids[1], NULL, sub_thread, (void *)req);
+            handle_subscriber(req);
             break;
         case 3:
             fprintf(stderr, "OP_CODE 3: received\n");
@@ -178,15 +202,9 @@ int main(int argc, char **argv) {
         default:
             fprintf(stderr, "Ignoring unknown OP_CODE %d\n", req->op_code);
             break;
-        }
     }
 
-    if (mbroker_destroy() != 0) {
-        fprintf(stderr, "ERR Failed terminating mbroker\n");
-        exit(EXIT_FAILURE);
-    }
-
-    exit(EXIT_SUCCESS);
+    return 0;
 }
 
 /**

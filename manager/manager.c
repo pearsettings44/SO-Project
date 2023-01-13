@@ -2,12 +2,12 @@
 #include "requests.h"
 #include "response.h"
 #include <fcntl.h>
+#include <mbroker.h>
 #include <stdbool.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/types.h>
 #include <unistd.h>
-#include <stdlib.h>
-#include <mbroker.h>
 
 static void print_usage() {
     fprintf(stderr,
@@ -154,14 +154,13 @@ int list_boxes(char **args) {
         }
     }
 
-    //sort boxes by name
+    // sort boxes by name
     int compare(const void *a, const void *b) {
         list_manager_response_t *box_a = (list_manager_response_t *)a;
         list_manager_response_t *box_b = (list_manager_response_t *)b;
         return strcmp(box_a->box_name, box_b->box_name);
     }
     qsort(boxes, (size_t)box_count, sizeof(list_manager_response_t), compare);
-
 
     // no boxes
     if (box_count == 0) {
