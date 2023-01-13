@@ -14,6 +14,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include "producer-consumer.h"
 
 box_t *mbroker_boxes;
 allocation_state_t *boxes_bitmap;
@@ -25,16 +26,11 @@ void sigpipe_handler(int sig) {
     // this is used simply to overwrite default SIGPIPE behaviour
 }
 
-void *pub_thread(void *args) {
-    handle_publisher((registration_request_t *)args);
-
-    return NULL;
-}
-
-void *sub_thread(void *args) {
-    handle_subscriber((registration_request_t *)args);
-
-    return NULL;
+// worked thread 
+void *worker_thread(void *queue) {
+    while (1) {
+        request_handler(pcq_dequeue((pc_queue_t *)queue));
+    }
 }
 
 int init_mbroker() {
@@ -55,6 +51,7 @@ int init_mbroker() {
     boxes_bitmap = malloc(sizeof(allocation_state_t) * MAX_BOX_COUNT);
 
     for (int i = 0; i < MAX_BOX_COUNT; ++i) {
+        boxes_bitmap[i] = FREE;
         pthread_cond_init(&mbroker_boxes[i].condition, NULL);
         pthread_mutex_init(&mbroker_boxes[i].mutex, NULL);
     }
@@ -69,6 +66,8 @@ int mbroker_destroy() {
     }
 
     for (int i = 0; i < MAX_BOX_COUNT; ++i) {
+        pthread_cond_destroy(&mbroker_boxes[i].condition);
+        pthread_mutex_destroy(&mbroker_boxes[i].mutex);
         // TODO destroy blocks mutexes and cond variables
     }
 
@@ -96,7 +95,7 @@ int main(int argc, char **argv) {
     // create known registration pipe for clients
     if (mkfifo(argv[1], S_IRUSR | S_IWUSR | S_IWGRP) == -1 && errno != EEXIST) {
         fprintf(stderr, "mbroker: couldn't create FIFO %s\n", argv[1]);
-        tfs_destroy();
+        mbroker_destroy();
         exit(EXIT_FAILURE);
     }
 
@@ -104,7 +103,7 @@ int main(int argc, char **argv) {
     int mbroker_fd = open(argv[1], O_RDONLY);
     if (mbroker_fd == -1) {
         fprintf(stderr, "Error opening pipe %s\n", argv[1]);
-        tfs_destroy();
+        mbroker_destroy();
         exit(EXIT_FAILURE);
     }
 
@@ -112,7 +111,15 @@ int main(int argc, char **argv) {
     int dummy_fd = open(argv[1], O_WRONLY);
     if (dummy_fd == -1) {
         fprintf(stderr, "ERR failed to open pipe %s\n", argv[1]);
-        tfs_destroy();
+        mbroker_destroy();
+        exit(EXIT_FAILURE);
+    }
+
+    pc_queue_t requests_queue;
+
+    if (pcq_create(&requests_queue, (size_t)atoi(argv[2])) != 0) {
+        fprintf(stderr, "ERR failed to create requests queue \n");
+        mbroker_destroy();
         exit(EXIT_FAILURE);
     }
 
@@ -125,17 +132,18 @@ int main(int argc, char **argv) {
      * Accepted op_codes are handled by the switch case, if invalid op_codes are
      * provided nothing will be done and an error will be printed to stderr
      */
-    registration_request_t req;
+    registration_request_t *req;
 
     // this is the main loop
     while (1) {
+        req = malloc(sizeof(*req));
         // read requests on registration pipe
-        ssize_t ret = read(mbroker_fd, &req, sizeof(req));
+        ssize_t ret = read(mbroker_fd, req, sizeof(*req));
         // pipe closed somewhere, procced
         if (ret == 0) {
             continue;
             // partial read or error reading
-        } else if (ret != sizeof(req)) {
+        } else if (ret != sizeof(*req)) {
             fprintf(stderr, "ERR Failed to read request\n");
             continue;
         }
@@ -144,31 +152,31 @@ int main(int argc, char **argv) {
 
         pthread_t tids[2];
 
-        switch (req.op_code) {
+        switch (req->op_code) {
         case 1:
             fprintf(stderr, "OP_CODE 1: received\n");
             // handle_publisher(&req);
-            pthread_create(&tids[0], NULL, pub_thread, (void *)&req);
+            pthread_create(&tids[0], NULL, pub_thread, (void *)req);
             break;
         case 2:
             fprintf(stderr, "OP_CODE 2: received\n");
             // handle_subscriber(&req);
-            pthread_create(&tids[1], NULL, sub_thread, (void *)&req);
+            pthread_create(&tids[1], NULL, sub_thread, (void *)req);
             break;
         case 3:
             fprintf(stderr, "OP_CODE 3: received\n");
-            handle_manager(&req);
+            handle_manager(req);
             break;
         case 5:
             fprintf(stderr, "OP_CODE 5: received\n");
-            handle_manager(&req);
+            handle_manager(req);
             break;
         case 7:
             fprintf(stderr, "OP_CODE 7: received\n");
-            handle_list(&req);
+            handle_list(req);
             break;
         default:
-            fprintf(stderr, "Ignoring unknown OP_CODE %d\n", req.op_code);
+            fprintf(stderr, "Ignoring unknown OP_CODE %d\n", req->op_code);
             break;
         }
     }
@@ -425,54 +433,46 @@ int handle_subscriber(registration_request_t *req) {
             return -1;
         }
         // read a message from the box into BUFF
-        if (total_read < box->size) {
-            ssize_t ret = read_message(box_fd, BUFF);
-            if (ret == -1) {
-                // TO DO add a conditional variable thingy somewhere in here
-                // (inside the loop) continues looping untill SIGPIPE recieved
-                break;
-            }
-
-            total_read += (size_t)ret;
-
-            // initialize client response
-            if (subscriber_response_init(&sub_resp, BUFF) != 0) {
-                fprintf(stderr,
-                        "ERR Couldn't initialize subscriber response\n");
-                break;
-            }
-
-            // send response
-            int r = subscriber_response_send(sub_fd, &sub_resp);
-
-            if (r != 0) {
-                // if EPIPE
-                if (r == -1) {
-                    fprintf(stderr, "Client ended the session\n");
-                } else {
-                    fprintf(stderr,
-                            "ERR Couldn't write or patial write to FIFO %s\n",
-                            req->pipe_name);
-                }
-                break;
-            }
-
-            if (mutex_unlock(&box->mutex) != 0) {
-                close(sub_fd);
-                tfs_close(box_fd);
-                return -1;
-            }
-        } else {
+        if (total_read >= box->size) {
+            // wait untill there are messages to be read
             if (cond_wait(&box->condition, &box->mutex) != 0) {
                 close(sub_fd);
                 tfs_close(box_fd);
                 return -1;
             }
-            if (mutex_unlock(&box->mutex) != 0) {
-                close(sub_fd);
-                tfs_close(box_fd);
-                return -1;
+        }
+        ssize_t ret = read_message(box_fd, BUFF);
+        // session closed (EPIPE read)
+        if (ret == -1) {
+            break;
+        }
+
+        total_read += (size_t)ret;
+
+        // initialize client response
+        if (subscriber_response_init(&sub_resp, BUFF) != 0) {
+            fprintf(stderr,
+                    "ERR Couldn't initialize subscriber response\n");
+            break;
+        }
+
+        // send response
+        int r = subscriber_response_send(sub_fd, &sub_resp);
+        if (r != 0) {
+            // if EPIPE
+            if (r == -1) {
+                fprintf(stderr, "Client ended the session\n");
+            } else {
+                fprintf(stderr,
+                        "ERR Couldn't write or patial write to FIFO %s\n",
+                        req->pipe_name);
             }
+            break;
+        }
+        if (mutex_unlock(&box->mutex) != 0) {
+            close(sub_fd);
+            tfs_close(box_fd);
+            return -1;
         }
     }
 
