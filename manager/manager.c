@@ -2,7 +2,11 @@
 #include "requests.h"
 #include "response.h"
 #include <fcntl.h>
+<<<<<<< HEAD
 #include <mbroker.h>
+=======
+#include "mbroker.h"
+>>>>>>> origin/main
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
@@ -139,7 +143,10 @@ int list_boxes(char **args) {
     while (1) {
         ssize_t ret = read(man_fd, &man_resp, sizeof(man_resp));
         // it failed to read
-        if (ret != sizeof(man_resp)) {
+        if (ret == 0) {
+            fprintf(stdout, "NO BOXES FOUND\n");
+            break;
+        } else if (ret != sizeof(man_resp)) {
             fprintf(stderr, "ERR couldn't read response from pipe\n");
             break;
         }
@@ -162,16 +169,10 @@ int list_boxes(char **args) {
     }
     qsort(boxes, (size_t)box_count, sizeof(list_manager_response_t), compare);
 
-    // no boxes
-    if (box_count == 0) {
-        fprintf(stdout, "NO BOXES FOUND\n");
-    } else {
-        // Loop through boxes and print them;
-        for (int i = 0; i < box_count; i++) {
-            list_manager_response_t box = boxes[i];
-            fprintf(stdout, "%s %zu %zu %zu\n", box.box_name + 1, box.box_size,
-                    box.n_publishers, box.n_subscribers);
-        }
+    for (int i = 0; i < box_count; i++) {
+        list_manager_response_t box = boxes[i];
+        fprintf(stdout, "%s %zu %zu %zu\n", box.box_name + 1, box.box_size,
+                box.n_publishers, box.n_subscribers);
     }
 
     // close(mbroker_fd);
