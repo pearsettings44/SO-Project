@@ -3,6 +3,7 @@
 #include "box.h"
 #include "logging.h"
 #include "operations.h"
+#include "producer-consumer.h"
 #include "wrapper.h"
 #include <errno.h>
 #include <fcntl.h>
@@ -14,9 +15,9 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
-#include "producer-consumer.h"
 
 box_t *mbroker_boxes;
+pthread_mutex_t mbroker_boxes_lock = PTHREAD_MUTEX_INITIALIZER;
 allocation_state_t *boxes_bitmap;
 static int box_count;
 
@@ -26,14 +27,16 @@ void sigpipe_handler(int sig) {
     // this is used simply to overwrite default SIGPIPE behaviour
 }
 
-// worked thread 
+// worked thread
 void *worker_thread_fn(void *queue) {
-    // get a request to handle
-    registration_request_t *req = pcq_dequeue((pc_queue_t *)queue);
-    // handle request
-    requests_handler(req);
-    // free memory
-    free(req);
+    while (1) {
+        // get request
+        registration_request_t *req = pcq_dequeue((pc_queue_t *)queue);
+        // handle request
+        requests_handler(req);
+        // free memory associated
+        free(req);
+    }
     return NULL;
 }
 
@@ -42,12 +45,12 @@ int init_mbroker() {
     params.max_inode_count = MAX_BOX_COUNT;
 
     if (tfs_init(&params) != 0) {
-        fprintf(stderr, "ERR: Failed initializing TFS instance\n");
+        fprintf(stderr, "ERROR: Failed initializing TFS instance\n");
         return -1;
     }
 
     if (signal(SIGPIPE, sigpipe_handler) == SIG_ERR) {
-        fprintf(stderr, "ERR couldn't overwritte SIGPIPE default handler\n");
+        fprintf(stderr, "ERROR: Couldn't overwritte SIGPIPE default handler\n");
         return -1;
     }
 
@@ -55,7 +58,7 @@ int init_mbroker() {
     boxes_bitmap = malloc(sizeof(allocation_state_t) * MAX_BOX_COUNT);
 
     for (int i = 0; i < MAX_BOX_COUNT; ++i) {
-        boxes_bitmap[i] = FREE;
+        mbroker_boxes[i].alloc_state = NOT_USED;
         pthread_cond_init(&mbroker_boxes[i].condition, NULL);
         pthread_mutex_init(&mbroker_boxes[i].mutex, NULL);
     }
@@ -64,18 +67,18 @@ int init_mbroker() {
 }
 
 int mbroker_destroy() {
-    if (tfs_destroy() != 0) {
-        fprintf(stderr, "ERR Failed destroying TFS instance\n");
-        return -1;
-    }
-
     for (int i = 0; i < MAX_BOX_COUNT; ++i) {
         pthread_cond_destroy(&mbroker_boxes[i].condition);
         pthread_mutex_destroy(&mbroker_boxes[i].mutex);
-        // TODO destroy blocks mutexes and cond variables
+    }
+
+    if (tfs_destroy() != 0) {
+        fprintf(stderr, "ERROR: Failed destroying TFS instance\n");
+        return -1;
     }
 
     free(mbroker_boxes);
+    pthread_mutex_destroy(&mbroker_boxes_lock);
     free(boxes_bitmap);
 
     return 0;
@@ -92,13 +95,13 @@ int main(int argc, char **argv) {
     }
 
     if (init_mbroker() != 0) {
-        fprintf(stderr, "ERR: Failed initializing mbroker\n");
+        fprintf(stderr, "FATAL: Failed initializing mbroker\n");
         exit(EXIT_FAILURE);
     }
 
     // create known registration pipe for clients
     if (mkfifo(argv[1], S_IRUSR | S_IWUSR | S_IWGRP) == -1 && errno != EEXIST) {
-        fprintf(stderr, "mbroker: couldn't create FIFO %s\n", argv[1]);
+        fprintf(stderr, "FATAL: Couldn't create FIFO %s\n", argv[1]);
         mbroker_destroy();
         exit(EXIT_FAILURE);
     }
@@ -106,7 +109,7 @@ int main(int argc, char **argv) {
     // open pipe
     int mbroker_fd = open(argv[1], O_RDONLY);
     if (mbroker_fd == -1) {
-        fprintf(stderr, "Error opening pipe %s\n", argv[1]);
+        fprintf(stderr, "FATAL: Couldn't open pipe %s\n", argv[1]);
         mbroker_destroy();
         exit(EXIT_FAILURE);
     }
@@ -114,7 +117,7 @@ int main(int argc, char **argv) {
     // workaround SIGPIPE
     int dummy_fd = open(argv[1], O_WRONLY);
     if (dummy_fd == -1) {
-        fprintf(stderr, "ERR failed to open pipe %s\n", argv[1]);
+        fprintf(stderr, "FATAL: Couldn't open pipe %s\n", argv[1]);
         mbroker_destroy();
         exit(EXIT_FAILURE);
     }
@@ -124,7 +127,7 @@ int main(int argc, char **argv) {
     pc_queue_t requests_queue;
 
     if (pcq_create(&requests_queue, (size_t)sessions) != 0) {
-        fprintf(stderr, "ERR failed to create requests queue \n");
+        fprintf(stderr, "FATAL: Failed creating pcq\n");
         mbroker_destroy();
         exit(EXIT_FAILURE);
     }
@@ -132,9 +135,13 @@ int main(int argc, char **argv) {
     pthread_t tid[sessions];
 
     for (unsigned int i = 0; i < sessions; ++i) {
-        pthread_create(&tid[i], NULL, worker_thread_fn, (void *)&requests_queue);
+        if (pthread_create(&tid[i], NULL, worker_thread_fn,
+                           (void *)&requests_queue) != 0) {
+            fprintf(stderr, "FATAL: Failed launching thread pool\n");
+            mbroker_destroy();
+            exit(EXIT_FAILURE);
+        }
     }
-
 
     /**
      * Registration requests expected from the clients
@@ -157,7 +164,7 @@ int main(int argc, char **argv) {
             continue;
             // partial read or error reading
         } else if (ret != sizeof(*req)) {
-            fprintf(stderr, "ERR Failed to read request\n");
+            fprintf(stderr, "ERROR: Failed to read request\n");
             continue;
         }
         pcq_enqueue(&requests_queue, req);
@@ -168,7 +175,7 @@ int main(int argc, char **argv) {
     }
 
     if (mbroker_destroy() != 0) {
-        fprintf(stderr, "ERR Failed terminating mbroker\n");
+        fprintf(stderr, "FATAL: Failed terminating mbroker\n");
         exit(EXIT_FAILURE);
     }
 
@@ -177,31 +184,31 @@ int main(int argc, char **argv) {
 
 int requests_handler(registration_request_t *req) {
     switch (req->op_code) {
-        case 1:
-            fprintf(stderr, "OP_CODE 1: received\n");
-            // handle_publisher(&req);
-            handle_publisher(req);
-            break;
-        case 2:
-            fprintf(stderr, "OP_CODE 2: received\n");
-            // handle_subscriber(&req);
-            handle_subscriber(req);
-            break;
-        case 3:
-            fprintf(stderr, "OP_CODE 3: received\n");
-            handle_manager(req);
-            break;
-        case 5:
-            fprintf(stderr, "OP_CODE 5: received\n");
-            handle_manager(req);
-            break;
-        case 7:
-            fprintf(stderr, "OP_CODE 7: received\n");
-            handle_list(req);
-            break;
-        default:
-            fprintf(stderr, "Ignoring unknown OP_CODE %d\n", req->op_code);
-            break;
+    case 1:
+        // fprintf(stderr, "OP_CODE 1: received\n");
+        // handle_publisher(&req);
+        handle_publisher(req);
+        break;
+    case 2:
+        // fprintf(stderr, "OP_CODE 2: received\n");
+        // handle_subscriber(&req);
+        handle_subscriber(req);
+        break;
+    case 3:
+        // fprintf(stderr, "OP_CODE 3: received\n");
+        handle_manager(req);
+        break;
+    case 5:
+        // fprintf(stderr, "OP_CODE 5: received\n");
+        handle_manager(req);
+        break;
+    case 7:
+        // fprintf(stderr, "OP_CODE 7: received\n");
+        handle_list(req);
+        break;
+    default:
+        // fprintf(stderr, "Ignoring unknown OP_CODE %d\n", req->op_code);
+        break;
     }
 
     return 0;
@@ -214,33 +221,35 @@ int requests_handler(registration_request_t *req) {
  *
  * Possible issues:
  * - Box doesn't exist
- * - Box already as a publisher writting to it
+ * - Box already has a publisher writting to it
  */
 int handle_publisher(registration_request_t *req) {
     // unlock publisher process, even if request is invalid
     int publisher_fd = open(req->pipe_name, O_RDONLY);
     if (publisher_fd == -1) {
-        fprintf(stderr, "ERROR Failed opening publisher pipe\n");
+        fprintf(stderr, "ERROR: Failed opening publisher pipe %s\n",
+                req->pipe_name);
         return -1;
     }
 
     // get box, if it doesn't exist close the pipe
     box_t *box = get_box(req->box_name);
     if (box == NULL) {
-        fprintf(stderr, "ERR Box doesn't exist\n");
+        fprintf(stderr, "ERROR: Box %s doesn't exist\n", req->box_name);
         close(publisher_fd);
         return -1;
     }
 
     // lock box mutex
-    if (mutex_lock(&box->mutex) != 0) {
-        close(publisher_fd);
-        return -1;
+    if (pthread_mutex_lock(&box->mutex) != 0) {
+        fprintf(stderr, "FATAL: Couldn't lock box %s mutex\n", box->name);
+        exit(EXIT_FAILURE);
     }
 
     // check if there is a publisher writting to box
     if (box->n_publishers == 1) {
-        fprintf(stderr, "ERR publisher already writting to box\n");
+        fprintf(stderr, "ERROR: Another publisher already writting to box %s\n",
+                box->name);
         close(publisher_fd);
         return -1;
     }
@@ -248,7 +257,7 @@ int handle_publisher(registration_request_t *req) {
     // open box file in TFS
     int box_fd = tfs_open(box->name, TFS_O_APPEND);
     if (box_fd == -1) {
-        fprintf(stderr, "ERR Couldn't access box (TFS)\n");
+        fprintf(stderr, "ERROR: Couldn't open box %s data\n", box->name);
         close(publisher_fd);
         return -1;
     }
@@ -264,63 +273,71 @@ int handle_publisher(registration_request_t *req) {
     box->n_publishers += 1;
 
     // unlock box mutex
-    if (mutex_unlock(&box->mutex) != 0) {
-        close(publisher_fd);
-        return -1;
+    if (pthread_mutex_unlock(&box->mutex) != 0) {
+        fprintf(stderr, "FATAL: Couldn't unlock box %s mutex\n", box->name);
+        exit(EXIT_FAILURE);
     }
 
     while (1) {
-        // read client request
+        // read publisher request
         ssize_t ret = read(publisher_fd, &pub_r, sizeof(pub_r));
         // if EOF received, end session
         if (ret == 0) {
             break;
             // couldn't read request (partial read or error)
         } else if (ret != sizeof(pub_r)) {
+            fprintf(stderr, "ERROR: Couldn't read publisher request\n");
+            break;
+        }
+
+        // always check if box is not deleted while awaiting for a request
+        if (box->alloc_state == NOT_USED) {
             break;
         }
 
         // lock box before writting operation
-        if (mutex_lock(&box->mutex) != 0) {
-            tfs_close(box_fd);
-            close(publisher_fd);
-            return -1;
+        if (pthread_mutex_lock(&box->mutex) != 0) {
+            fprintf(stderr, "FATAL: Couldn't lock box %s mutex\n", box->name);
+            exit(EXIT_FAILURE);
         }
 
         // write message contents into box
         ret = write_message(box_fd, pub_r.message);
         // if unsucessful write
         if (ret == -1) {
-            mutex_unlock(&box->mutex);
+            if (pthread_mutex_unlock(&box->mutex) != 0) {
+                fprintf(stderr, "FATAL: Couldn't unlock box %s mutex\n",
+                        box->name);
+                exit(EXIT_FAILURE);
+            }
             break;
         }
         // update box info
         box->size += (size_t)ret + 1;
-        if (mutex_unlock(&box->mutex) != 0) {
-            tfs_close(box_fd);
-            close(publisher_fd);
-            return -1;
+        if (pthread_mutex_unlock(&box->mutex) != 0) {
+            fprintf(stderr, "FATAL: Couldn't unlock box %s mutex\n", box->name);
+            exit(EXIT_FAILURE);
         }
         // signal threads waiting on this box's conditional variable
-        if (cond_broadcast(&box->condition) != 0) {
-            tfs_close(box_fd);
-            close(publisher_fd);
-            return -1;
+        if (pthread_cond_broadcast(&box->condition) != 0) {
+            fprintf(
+                stderr,
+                "FATAL: Couldn't broadcast on box %s conditional variable\n",
+                box->name);
+            exit(EXIT_FAILURE);
         }
     }
 
     // lock mutex for update on publishers count
-    if (mutex_lock(&box->mutex) != 0) {
-        tfs_close(box_fd);
-        close(publisher_fd);
-        return -1;
+    if (pthread_mutex_lock(&box->mutex) != 0) {
+        fprintf(stderr, "FATAL Couldn't lock box %s mutex\n", box->name);
+        exit(EXIT_FAILURE);
     }
     box->n_publishers--;
     // unlock mutex
-    if (mutex_unlock(&box->mutex) != 0) {
-        tfs_close(box_fd);
-        close(publisher_fd);
-        return -1;
+    if (pthread_mutex_unlock(&box->mutex) != 0) {
+        fprintf(stderr, "FATAL: Couldn't unlock box %s mutex\n", box->name);
+        exit(EXIT_FAILURE);
     }
 
     tfs_close(box_fd);
@@ -345,7 +362,7 @@ int handle_manager(registration_request_t *req) {
     // open pipe
     int manager_fd = open(req->pipe_name, O_WRONLY);
     if (manager_fd == -1) {
-        fprintf(stderr, "ERROR Failed opening manager pipe\n");
+        fprintf(stderr, "ERR Failed opening manager pipe\n");
         return -1;
     }
 
@@ -362,7 +379,7 @@ int handle_manager(registration_request_t *req) {
 
     // initialize response struct
     if (manager_response_init(&resp, req->op_code + 1, 0, NULL) != 0) {
-        fprintf(stderr, "ERROR Failed creating response\n");
+        fprintf(stderr, "ERR Failed creating response\n");
         close(manager_fd);
         return -1;
     }
@@ -386,8 +403,8 @@ int handle_manager(registration_request_t *req) {
 
     // send response to the client
     if (manager_response_send(manager_fd, &resp) != 0) {
-        fprintf(stderr, "ERROR Failed sending response\n");
-        exit(EXIT_FAILURE);
+        fprintf(stderr, "ERR Failed sending response\n");
+        return -1;
     }
 
     close(manager_fd);
@@ -426,20 +443,18 @@ int handle_subscriber(registration_request_t *req) {
     }
 
     // lock box mutex
-    if (mutex_lock(&box->mutex) != 0) {
-        close(sub_fd);
-        tfs_close(box_fd);
-        return -1;
+    if (pthread_mutex_lock(&box->mutex) != 0) {
+        fprintf(stderr, "FATAL Couldn't lock box's mutex\n");
+        exit(EXIT_FAILURE);
     }
 
     // add a subscriber to box
     box->n_subscribers++;
 
     // unlock box mutex
-    if (mutex_unlock(&box->mutex) != 0) {
-        close(sub_fd);
-        tfs_close(box_fd);
-        return -1;
+    if (pthread_mutex_unlock(&box->mutex) != 0) {
+        fprintf(stderr, "FATAL Couldn't unlock box's mutex\n");
+        exit(EXIT_FAILURE);
     }
 
     // response to be sent to client
@@ -448,18 +463,17 @@ int handle_subscriber(registration_request_t *req) {
     char BUFF[MESSAGE_LENGTH];
     size_t total_read = 0;
     while (1) {
-        if (mutex_lock(&box->mutex) != 0) {
-            close(sub_fd);
-            tfs_close(box_fd);
-            return -1;
+        if (pthread_mutex_lock(&box->mutex) != 0) {
+            fprintf(stderr, "FATAL Couldn't lock box's mutex \n");
+            exit(EXIT_FAILURE);
         }
         // read a message from the box into BUFF
         if (total_read >= box->size) {
             // wait untill there are messages to be read
-            if (cond_wait(&box->condition, &box->mutex) != 0) {
-                close(sub_fd);
-                tfs_close(box_fd);
-                return -1;
+            if (pthread_cond_wait(&box->condition, &box->mutex) != 0) {
+                fprintf(stderr,
+                        "FATAL Couldn't wait on box's conditional variable\n");
+                exit(EXIT_FAILURE);
             }
         }
         ssize_t ret = read_message(box_fd, BUFF);
@@ -467,13 +481,16 @@ int handle_subscriber(registration_request_t *req) {
         if (ret == -1) {
             break;
         }
+        // box deleted mid operation
+        if (box->alloc_state == NOT_USED) {
+            break;
+        }
 
         total_read += (size_t)ret;
 
         // initialize client response
         if (subscriber_response_init(&sub_resp, BUFF) != 0) {
-            fprintf(stderr,
-                    "ERR Couldn't initialize subscriber response\n");
+            fprintf(stderr, "ERR Couldn't initialize subscriber response\n");
             break;
         }
 
@@ -482,8 +499,11 @@ int handle_subscriber(registration_request_t *req) {
         if (r != 0) {
             // if EPIPE
             if (r == -1) {
-                fprintf(stderr, "Client ended the session\n");
-                signal(SIGPIPE, sigpipe_handler);
+                fprintf(stderr, "Client ended session\n");
+                if (signal(SIGPIPE, sigpipe_handler) == SIG_ERR) {
+                    fprintf(stderr, "FATAL Couldn't assign SIGPIPE handler\n");
+                    exit(EXIT_FAILURE);
+                };
             } else {
                 fprintf(stderr,
                         "ERR Couldn't write or patial write to FIFO %s\n",
@@ -491,10 +511,9 @@ int handle_subscriber(registration_request_t *req) {
             }
             break;
         }
-        if (mutex_unlock(&box->mutex) != 0) {
-            close(sub_fd);
-            tfs_close(box_fd);
-            return -1;
+        if (pthread_mutex_unlock(&box->mutex) != 0) {
+            fprintf(stderr, "FATAL Couldn't unlock box's mutex\n");
+            exit(EXIT_FAILURE);
         }
     }
 
@@ -502,8 +521,9 @@ int handle_subscriber(registration_request_t *req) {
     close(sub_fd);
     tfs_close(box_fd);
 
-    if (mutex_unlock(&box->mutex) != 0) {
-        return -1;
+    if (pthread_mutex_unlock(&box->mutex) != 0) {
+        fprintf(stderr, "FATAL Couldn't unlock box's mutex\n");
+        exit(EXIT_FAILURE);
     }
 
     return 0;
@@ -513,11 +533,8 @@ int handle_list(registration_request_t *req) {
     int manager_fd = open(req->pipe_name, O_WRONLY);
     if (manager_fd == -1) {
         fprintf(stderr, "ERR Failed opening pipe %s\n", req->pipe_name);
-        exit(EXIT_FAILURE);
+        return -1;
     }
-
-    box_t *boxes = get_boxes_list();
-    allocation_state_t *bitmap = get_bitmap();
 
     // iterate through boxes and send them to the manager
     int j = 0;
@@ -525,21 +542,21 @@ int handle_list(registration_request_t *req) {
         if (j == box_count) {
             break;
         }
-        if (bitmap[i] == TAKEN) {
+        if (mbroker_boxes[i].alloc_state == USED) {
             j++;
             list_manager_response_t resp;
-            box_t box = boxes[i];
+            box_t box = mbroker_boxes[i];
             uint8_t last = (j == box_count) ? 1 : 0;
-            if (list_manager_response_init(&resp, last, box.name,
-                                           box.size, box.n_publishers,
+            if (list_manager_response_init(&resp, last, box.name, box.size,
+                                           box.n_publishers,
                                            box.n_subscribers) != 0) {
                 fprintf(stderr, "ERROR Failed initializing response\n");
-                exit(EXIT_FAILURE);
+                break;
             }
 
             if (list_manager_response_send(manager_fd, &resp) != 0) {
                 fprintf(stderr, "ERROR Failed sending response\n");
-                exit(EXIT_FAILURE);
+                break;
             }
         }
     }
@@ -555,7 +572,7 @@ int handle_list(registration_request_t *req) {
  */
 box_t *get_box(char *name) {
     for (int i = 0; i < MAX_BOX_COUNT; ++i) {
-        if (boxes_bitmap[i] == TAKEN) {
+        if (mbroker_boxes[i].alloc_state == USED) {
             if (strcmp(name, mbroker_boxes[i].name + 1) == 0) {
                 return &mbroker_boxes[i];
             }
@@ -570,11 +587,9 @@ box_t *get_box(char *name) {
  *
  * Declared so box.c has access to the data
  */
-box_t *get_boxes_list() { return mbroker_boxes; }
+box_t *get_mbroker_boxes_ref() { return mbroker_boxes; }
 
 /**
- * Return the bitmap of the boxes in mbroker
- *
- * Declared so box.c has access to the data
+ * Returns mbroker_boxes associated mutex
  */
-allocation_state_t *get_bitmap() { return boxes_bitmap; }
+pthread_mutex_t *get_mbroker_boxes_lock() { return &mbroker_boxes_lock; }

@@ -8,8 +8,7 @@
 
 #define BOX_NAME 32
 
-typedef enum box_allocation_state_t {FREE, TAKEN} box_allocation_state_t;
-
+typedef enum box_allocation_state_t { USED, NOT_USED } box_allocation_state_t;
 struct box_t {
     char name[BOX_NAME];
     uint64_t n_publishers;
@@ -19,7 +18,6 @@ struct box_t {
     pthread_mutex_t mutex;
     box_allocation_state_t alloc_state;
 };
-
 
 typedef struct box_t box_t;
 int create_box(manager_response_t *resp, char *name);

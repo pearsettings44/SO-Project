@@ -17,8 +17,7 @@ int handle_manager(registration_request_t *);
 int handle_list(registration_request_t *);
 
 box_t *get_box(char *name);
-// we did this because w had no real time to fix the linking stuff
-box_t *get_boxes_list();
-allocation_state_t *get_bitmap();
+box_t *get_mbroker_boxes_ref();
+pthread_mutex_t *get_mbroker_boxes_lock();
 
 #endif

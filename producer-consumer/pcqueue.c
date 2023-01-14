@@ -81,16 +81,12 @@ int pcq_destroy(pc_queue_t *queue) {
 }
 
 int pcq_enqueue(pc_queue_t *queue, void *elem) {
-    while (1) {
-        pthread_mutex_lock(&queue->pcq_current_size_lock);
-        pthread_mutex_lock(&queue->pcq_pusher_condvar_lock);
-        // if buffer is full, wait on pusher cond
-        if (queue->pcq_current_size == queue->pcq_capacity) {
-            pthread_mutex_unlock(&queue->pcq_current_size_lock);
-            pthread_cond_wait(&queue->pcq_pusher_condvar,
-                              &queue->pcq_pusher_condvar_lock);
-        }
-        break;
+    pthread_mutex_lock(&queue->pcq_pusher_condvar_lock);
+    pthread_mutex_lock(&queue->pcq_current_size_lock);
+    while (queue->pcq_current_size == queue->pcq_capacity) {
+        pthread_mutex_unlock(&queue->pcq_current_size_lock);
+        pthread_cond_wait(&queue->pcq_pusher_condvar,
+                          &queue->pcq_pusher_condvar_lock);
     }
     pthread_mutex_lock(&queue->pcq_head_lock);
     // add element to queue
@@ -108,16 +104,12 @@ int pcq_enqueue(pc_queue_t *queue, void *elem) {
 }
 
 void *pcq_dequeue(pc_queue_t *queue) {
-    while (1) {
-        pthread_mutex_lock(&queue->pcq_current_size_lock);
-        pthread_mutex_lock(&queue->pcq_popper_condvar_lock);
-        // if buffer is empty, sleep
-        if (queue->pcq_current_size == 0) {
-            pthread_mutex_unlock(&queue->pcq_current_size_lock);
-            pthread_cond_wait(&queue->pcq_popper_condvar,
-                              &queue->pcq_popper_condvar_lock);
-        }
-        break;
+    pthread_mutex_lock(&queue->pcq_popper_condvar_lock);
+    pthread_mutex_lock(&queue->pcq_current_size_lock);
+    while (queue->pcq_current_size == 0) {
+        pthread_mutex_unlock(&queue->pcq_current_size_lock);
+        pthread_cond_wait(&queue->pcq_popper_condvar,
+                          &queue->pcq_popper_condvar_lock);
     }
     pthread_mutex_lock(&queue->pcq_tail_lock);
     queue->pcq_current_size--;
