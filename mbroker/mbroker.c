@@ -18,7 +18,6 @@
 
 box_t *mbroker_boxes;
 pthread_mutex_t mbroker_boxes_lock = PTHREAD_MUTEX_INITIALIZER;
-allocation_state_t *boxes_bitmap;
 static int box_count;
 
 void sigpipe_handler(int sig) {
@@ -33,7 +32,10 @@ void *worker_thread_fn(void *queue) {
         // get request
         registration_request_t *req = pcq_dequeue((pc_queue_t *)queue);
         // handle request
-        requests_handler(req);
+        int ret = requests_handler(req);
+        if (ret == -1) {
+            WARN("Request handler returned an error");
+        }
         // free memory associated
         free(req);
     }
@@ -55,7 +57,6 @@ int init_mbroker() {
     }
 
     mbroker_boxes = malloc(sizeof(box_t) * MAX_BOX_COUNT);
-    boxes_bitmap = malloc(sizeof(allocation_state_t) * MAX_BOX_COUNT);
 
     for (int i = 0; i < MAX_BOX_COUNT; ++i) {
         mbroker_boxes[i].alloc_state = NOT_USED;
@@ -79,7 +80,6 @@ int mbroker_destroy() {
 
     free(mbroker_boxes);
     pthread_mutex_destroy(&mbroker_boxes_lock);
-    free(boxes_bitmap);
 
     return 0;
 }
@@ -90,7 +90,7 @@ int mbroker_destroy() {
  */
 int main(int argc, char **argv) {
     if (argc < 3 || strcmp(argv[1], "--help") == 0) {
-        fprintf(stderr, "usage: mbroker <pipename> <max-sessions>\n");
+        fprintf(stdout, "usage: mbroker <pipename> <max-sessions>\n");
         exit(EXIT_FAILURE);
     }
 
@@ -132,6 +132,11 @@ int main(int argc, char **argv) {
         exit(EXIT_FAILURE);
     }
 
+    /**
+     * Unbound buffer where registration requests are stored for all worker
+     * threads.
+     * 
+    */
     pthread_t tid[sessions];
 
     for (unsigned int i = 0; i < sessions; ++i) {
@@ -154,24 +159,32 @@ int main(int argc, char **argv) {
      */
     registration_request_t *req;
 
-    // this is the main loop
+    // main loop of the program
     while (1) {
         req = malloc(sizeof(*req));
-        // read requests on registration pipe
+        // read requests from registration pipe
         ssize_t ret = read(mbroker_fd, req, sizeof(*req));
-        // pipe closed somewhere, procced
+        // pipe closed somewhere, continue accepting requests
         if (ret == 0) {
             continue;
-            // partial read or error reading
+        // partial read or error reading
         } else if (ret != sizeof(*req)) {
             fprintf(stderr, "ERROR: Failed to read request\n");
             continue;
         }
+        LOG("Request received");
+        // add request to queue
         pcq_enqueue(&requests_queue, req);
     }
 
+    /**
+     * Wait on all threads before exiting. No ending method was
+     * specified in the project paper, so we would simply wait
+    */
     for (int i = 0; i < sessions; ++i) {
-        pthread_join(tid[i], NULL);
+        if (pthread_join(tid[i], NULL) != 0) {
+            fprintf(stderr, "FATAL: Coudln't join thread %ld\n", tid[i]);
+        };
     }
 
     if (mbroker_destroy() != 0) {
@@ -182,28 +195,26 @@ int main(int argc, char **argv) {
     exit(EXIT_SUCCESS);
 }
 
+/**
+ * Handle a registration request from various clients
+*/
 int requests_handler(registration_request_t *req) {
+    // LOG(req->op_code);
+    // fprintf(stdout, "OP_CODE %d: received\n", req->op_code);
     switch (req->op_code) {
     case 1:
-        // fprintf(stderr, "OP_CODE 1: received\n");
-        // handle_publisher(&req);
         handle_publisher(req);
         break;
     case 2:
-        // fprintf(stderr, "OP_CODE 2: received\n");
-        // handle_subscriber(&req);
         handle_subscriber(req);
         break;
     case 3:
-        // fprintf(stderr, "OP_CODE 3: received\n");
         handle_manager(req);
         break;
     case 5:
-        // fprintf(stderr, "OP_CODE 5: received\n");
         handle_manager(req);
         break;
     case 7:
-        // fprintf(stderr, "OP_CODE 7: received\n");
         handle_list(req);
         break;
     default:
@@ -224,6 +235,7 @@ int requests_handler(registration_request_t *req) {
  * - Box already has a publisher writting to it
  */
 int handle_publisher(registration_request_t *req) {
+    INFO("Handling publisher session")
     // unlock publisher process, even if request is invalid
     int publisher_fd = open(req->pipe_name, O_RDONLY);
     if (publisher_fd == -1) {
@@ -344,6 +356,7 @@ int handle_publisher(registration_request_t *req) {
     // close pipe
     close(publisher_fd);
 
+    INFO("Successfully finished handling publisher session");
     return 0;
 }
 
@@ -359,6 +372,7 @@ int handle_publisher(registration_request_t *req) {
  * All other possible errors are not in the scope of the project
  */
 int handle_manager(registration_request_t *req) {
+    INFO("Handling manager session")
     // open pipe
     int manager_fd = open(req->pipe_name, O_WRONLY);
     if (manager_fd == -1) {
@@ -409,6 +423,7 @@ int handle_manager(registration_request_t *req) {
 
     close(manager_fd);
 
+    INFO("Sucessfully finished handling manager session");
     return 0;
 }
 
@@ -418,6 +433,7 @@ int handle_manager(registration_request_t *req) {
  * If specified box doesn't exist, the pipe will be closed
  */
 int handle_subscriber(registration_request_t *req) {
+    INFO("Handling subscriber session")
     // open pipe to send responses
     int sub_fd = open(req->pipe_name, O_WRONLY);
     if (sub_fd == -1) {
@@ -499,7 +515,6 @@ int handle_subscriber(registration_request_t *req) {
         if (r != 0) {
             // if EPIPE
             if (r == -1) {
-                fprintf(stderr, "Client ended session\n");
                 if (signal(SIGPIPE, sigpipe_handler) == SIG_ERR) {
                     fprintf(stderr, "FATAL Couldn't assign SIGPIPE handler\n");
                     exit(EXIT_FAILURE);
@@ -526,10 +541,12 @@ int handle_subscriber(registration_request_t *req) {
         exit(EXIT_FAILURE);
     }
 
+    INFO("Successfully finished handling subscriber session");
     return 0;
 }
 
 int handle_list(registration_request_t *req) {
+    INFO("Handling manager listing session");
     int manager_fd = open(req->pipe_name, O_WRONLY);
     if (manager_fd == -1) {
         fprintf(stderr, "ERR Failed opening pipe %s\n", req->pipe_name);
@@ -563,6 +580,7 @@ int handle_list(registration_request_t *req) {
 
     close(manager_fd);
 
+    INFO("Successfully finished handling manager listing session");
     return 0;
 }
 

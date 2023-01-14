@@ -87,6 +87,7 @@ int pcq_enqueue(pc_queue_t *queue, void *elem) {
         pthread_mutex_unlock(&queue->pcq_current_size_lock);
         pthread_cond_wait(&queue->pcq_pusher_condvar,
                           &queue->pcq_pusher_condvar_lock);
+        pthread_mutex_lock(&queue->pcq_current_size_lock);
     }
     pthread_mutex_lock(&queue->pcq_head_lock);
     // add element to queue
@@ -94,11 +95,11 @@ int pcq_enqueue(pc_queue_t *queue, void *elem) {
     queue->pcq_buffer[queue->pcq_head] = elem;
     // update head position
     queue->pcq_head = (queue->pcq_head + 1) % queue->pcq_capacity;
+    pthread_mutex_unlock(&queue->pcq_head_lock);
     pthread_mutex_unlock(&queue->pcq_current_size_lock);
     pthread_mutex_unlock(&queue->pcq_pusher_condvar_lock);
-    pthread_mutex_unlock(&queue->pcq_head_lock);
     // signal poppers that there is a new request on buffer
-    pthread_cond_signal(&queue->pcq_popper_condvar);
+    pthread_cond_broadcast(&queue->pcq_popper_condvar);
 
     return 0;
 }
@@ -110,6 +111,7 @@ void *pcq_dequeue(pc_queue_t *queue) {
         pthread_mutex_unlock(&queue->pcq_current_size_lock);
         pthread_cond_wait(&queue->pcq_popper_condvar,
                           &queue->pcq_popper_condvar_lock);
+        pthread_mutex_lock(&queue->pcq_current_size_lock);
     }
     pthread_mutex_lock(&queue->pcq_tail_lock);
     queue->pcq_current_size--;
@@ -117,11 +119,11 @@ void *pcq_dequeue(pc_queue_t *queue) {
     void *elem = queue->pcq_buffer[queue->pcq_tail];
     // update new tail position
     queue->pcq_tail = (queue->pcq_tail + 1) % queue->pcq_capacity;
+    pthread_mutex_unlock(&queue->pcq_tail_lock);
     pthread_mutex_unlock(&queue->pcq_current_size_lock);
     pthread_mutex_unlock(&queue->pcq_popper_condvar_lock);
-    pthread_mutex_unlock(&queue->pcq_tail_lock);
     // signal pushers that a free position has been created
-    pthread_cond_signal(&queue->pcq_pusher_condvar);
+    pthread_cond_broadcast(&queue->pcq_pusher_condvar);
 
     return elem;
 }
