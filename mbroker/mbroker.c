@@ -1,6 +1,7 @@
 #include "mbroker.h"
 #include "betterassert.h"
 #include "box.h"
+#include "client.h"
 #include "logging.h"
 #include "operations.h"
 #include "producer-consumer.h"
@@ -169,7 +170,7 @@ int main(int argc, char **argv) {
         // pipe closed somewhere, continue accepting requests
         if (ret == 0) {
             continue;
-        // partial read or error reading
+            // partial read or error reading
         } else if (ret != sizeof(*req)) {
             fprintf(stderr, PIPE_PARTIAL_RW_ERR_MSG, argv[1]);
             continue;
@@ -253,7 +254,6 @@ int handle_publisher(registration_request_t *req) {
 
     // lock box mutex
     mutex_lock(&box->mutex);
-
     // check if there is a publisher writting to box
     if (box->n_publishers == 1) {
         fprintf(stderr, BOX_HAS_PUBLISHER_ERR_MSG, box->name);
@@ -269,18 +269,17 @@ int handle_publisher(registration_request_t *req) {
         return -1;
     }
 
+    // mark new publisher in box
+    box->n_publishers += 1;
+    // unlock box mutex
+    mutex_unlock(&box->mutex);
+
     /**
      * Request to be received from client
      * Request format:
      *  [ op_code = 9 (uint8_t) | message (char[1024]) )
      */
     publisher_request_t pub_r;
-
-    // mark new publisher in box
-    box->n_publishers += 1;
-
-    // unlock box mutex
-    mutex_unlock(&box->mutex);
 
     while (1) {
         // read publisher request
@@ -301,7 +300,6 @@ int handle_publisher(registration_request_t *req) {
 
         // lock box before writting operation
         mutex_lock(&box->mutex);
-
         // write message contents into box
         ret = write_message(box_fd, pub_r.message);
         // if unsucessful write
@@ -311,7 +309,6 @@ int handle_publisher(registration_request_t *req) {
         }
         // update box info
         box->size += (size_t)ret + 1;
-
         mutex_unlock(&box->mutex);
         // signal threads waiting on this box's conditional variable
         cond_broadcast(&box->condition);
@@ -420,6 +417,7 @@ int handle_subscriber(registration_request_t *req) {
         return -1;
     }
 
+    mutex_lock(&box->mutex);
     // open file in TFS
     int box_fd = tfs_open(box->name, 0);
     if (box_fd == -1) {
@@ -429,7 +427,6 @@ int handle_subscriber(registration_request_t *req) {
     }
 
     // lock box mutex
-    mutex_lock(&box->mutex);
     box->n_subscribers++;
     mutex_unlock(&box->mutex);
 

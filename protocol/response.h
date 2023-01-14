@@ -4,8 +4,22 @@
 #include "requests.h"
 #include <stdint.h>
 
+/**
+ * Configuration macros
+ */
 #define ERR_MESSAGE_LENGTH 1024
+
+/**
+ * Protocol OP-CODES
+ */
 #define LIST_MANAGER_OP 8
+
+/**
+ * Error messages
+ */
+#define RESPONSE_INIT_ERR_MSG "ERROR: Failed initializing %d op_code response\n"
+#define RESPONSE_SEND_ERR_MSG                                                  \
+    "ERROR: Failed sending %d op_code response to client\n"
 
 struct __attribute__((__packed__)) manager_response_t {
     uint8_t op_code;
@@ -16,7 +30,7 @@ struct __attribute__((__packed__)) manager_response_t {
 struct __attribute__((__packed__)) list_manager_response_t {
     uint8_t op_code;
     uint8_t last_flag;
-    char box_name[MAX_BOX_NAME];
+    char box_name[BOX_NAME_LENGTH];
     uint64_t box_size;
     uint64_t n_publishers;
     uint64_t n_subscribers;

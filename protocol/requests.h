@@ -4,6 +4,13 @@
 #include <stdint.h>
 
 /**
+ * Configuration macros
+ */
+#define PIPE_PATHNAME_LENGTH 256
+#define BOX_NAME_LENGTH 32
+#define MESSAGE_LENGTH 1024
+
+/**
  * Protocol OP-CODES
  */
 #define PUB_REGISTER_OP 1
@@ -14,14 +21,17 @@
 #define PUBLISH_OP_CODE 9
 #define SUBSCRIBER_OP_CODE 10
 
-#define MAX_PIPE_PATHNAME 256
-#define MAX_BOX_NAME 32
-#define MESSAGE_LENGTH 1024
+/**
+ * Error messages
+ */
+#define REQUEST_INIT_ERR_MSG "ERROR: Failed initializing %d op_code request\n"
+#define REQUEST_SEND_ERR_MSG                                                   \
+    "ERROR: Failed sending %d op_code request to mbroker\n"
 
 struct __attribute__((__packed__)) registration_request_t {
     uint8_t op_code;
-    char pipe_name[MAX_PIPE_PATHNAME];
-    char box_name[MAX_BOX_NAME];
+    char pipe_name[PIPE_PATHNAME_LENGTH];
+    char box_name[BOX_NAME_LENGTH];
 };
 
 struct __attribute__((__packed__)) publisher_request_t {
