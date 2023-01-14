@@ -258,6 +258,7 @@ int handle_publisher(registration_request_t *req) {
     if (box->n_publishers == 1) {
         fprintf(stderr, BOX_HAS_PUBLISHER_ERR_MSG, box->name);
         close(publisher_fd);
+        mutex_unlock(&box->mutex);
         return -1;
     }
 
@@ -266,6 +267,7 @@ int handle_publisher(registration_request_t *req) {
     if (box_fd == -1) {
         fprintf(stderr, BOX_TFS_ERR_MSG, box->name);
         close(publisher_fd);
+        mutex_unlock(&box->mutex);
         return -1;
     }
 
@@ -423,6 +425,7 @@ int handle_subscriber(registration_request_t *req) {
     if (box_fd == -1) {
         fprintf(stderr, BOX_TFS_ERR_MSG, box->name);
         close(sub_fd);
+        mutex_unlock(&box->mutex);
         return -1;
     }
 
