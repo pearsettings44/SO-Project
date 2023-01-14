@@ -140,7 +140,7 @@ int list_boxes(char **args) {
 
     list_manager_response_t list_resp;
     // array to store the received responses
-    list_manager_response_t boxes[MAX_BOX_COUNT];
+    list_manager_response_t boxes[BOX_COUNT_MAX];
     int box_count = 0;
     while (1) {
         ssize_t ret = read(list_fd, &list_resp, sizeof(list_resp));

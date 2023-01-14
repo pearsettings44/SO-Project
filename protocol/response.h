@@ -4,13 +4,13 @@
 #include "requests.h"
 #include <stdint.h>
 
-#define ERROR_MESSAGE_LENGTH 1024
+#define ERR_MESSAGE_LENGTH 1024
 #define LIST_MANAGER_OP 8
 
 struct __attribute__((__packed__)) manager_response_t {
     uint8_t op_code;
     int32_t ret_code;
-    char error_message[ERROR_MESSAGE_LENGTH];
+    char error_message[ERR_MESSAGE_LENGTH];
 };
 
 struct __attribute__((__packed__)) list_manager_response_t {

@@ -2,6 +2,7 @@
 #include "mbroker.h"
 #include "operations.h"
 #include "response.h"
+#include "utils.h"
 #include <string.h>
 
 /**
@@ -64,20 +65,20 @@ int create_box(manager_response_t *resp, char *name) {
     tfs_close(fd);
 
     box_t *boxes = get_mbroker_boxes_ref();
-    pthread_mutex_lock(get_mbroker_boxes_lock());
+    mutex_lock(get_mbroker_boxes_lock());
     /**
      * Allocate space for the box, this should never fail because it relies on
      * TFS checks (having free space for a file), if the function gets here,
      * there is space for a box
      */
-    for (int i = 0; i < MAX_BOX_COUNT; ++i) {
+    for (int i = 0; i < BOX_COUNT_MAX; ++i) {
         if (boxes[i].alloc_state == NOT_USED) {
             boxes[i] = new_box;
             break;
         }
     }
 
-    pthread_mutex_unlock(get_mbroker_boxes_lock());
+    mutex_unlock(get_mbroker_boxes_lock());
 
     return 0;
 }
@@ -97,7 +98,7 @@ int delete_box(manager_response_t *resp, char *name) {
         return -1;
     }
 
-    pthread_mutex_lock(&box->mutex);
+    mutex_lock(&box->mutex);
 
     if (tfs_unlink(box->name) != 0) {
         manager_response_set_error_msg(resp, "Couldn't delete box (TFS)\n");
@@ -106,8 +107,9 @@ int delete_box(manager_response_t *resp, char *name) {
 
     box->alloc_state = NOT_USED;
 
-    pthread_mutex_unlock(&box->mutex);
-    pthread_cond_broadcast(&box->condition);
+    mutex_unlock(&box->mutex);
+    // wake all threads that might be writting or reading from this box
+    cond_broadcast(&box->condition);
 
     return 0;
 }
