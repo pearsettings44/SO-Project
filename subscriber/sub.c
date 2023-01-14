@@ -88,6 +88,7 @@ int main(int argc, char **argv) {
 
     subscriber_response_t sub_resp;
 
+    unsigned int nr_messages = 0;
     while (1) {
         // read response sent from mbroker
         ssize_t ret = read(sub_fd, &sub_resp, sizeof(sub_resp));
@@ -95,7 +96,11 @@ int main(int argc, char **argv) {
          * If failed to read. Checks for interrupt var because it will take
          * a cycle for it to be detected
          */
-        if (ret != sizeof(sub_resp) && interrupt_var != 1) {
+        if (ret == 0) {
+            fprintf(stderr,
+                    "ERR pipe was closed by mbroker, operation was invalid\n");
+            break;
+        } else if (ret != sizeof(sub_resp) && interrupt_var != 1) {
             fprintf(stderr, "ERR couldn't read response from pipe\n");
             break;
         }
@@ -105,9 +110,12 @@ int main(int argc, char **argv) {
             break;
         }
         // print message received from mbroker
+        nr_messages++;
         fprintf(stdout, "%s\n", sub_resp.message);
     }
 
+    // print number of read messages
+    fprintf(stdout, "%d\n", nr_messages);
     // cleanup
     close(sub_fd);
     if (unlink(argv[2]) != 0) {
