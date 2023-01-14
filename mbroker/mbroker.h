@@ -41,6 +41,11 @@
 #define LOG_SUB_HANDLER "Handling subscriber client"
 #define LOG_MAN_HANDLER "Handling manager client"
 #define LOG_LIST_HANDLER "Handling listing client"
+#define LOG_SUCCESS_PUB "Successfully handled publisher session"
+#define LOG_SUCCESS_SUB "Successfully handled subscriber session"
+#define LOG_SUCCESS_MANAGER "Successfully handled manager session"
+#define LOG_SUCCESS_LIST "Sucessfully handled manager list session"
+#define LOG_FAIL_HANDLER "Request handler returned an error"
 
 int requests_handler(registration_request_t *);
 int handle_publisher(registration_request_t *);

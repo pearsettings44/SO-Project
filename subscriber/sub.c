@@ -13,7 +13,8 @@
 #include "requests.h"
 #include "response.h"
 
-static int interrupt_var;
+// flag that will signal main loop of interruption
+static volatile sig_atomic_t interrupt_var;
 
 /**
  * Simply signal the main loop that the event has occurred. As an alternative
@@ -41,46 +42,6 @@ int main(int argc, char **argv) {
     int sub_fd = connect_to_mbroker(argv[1], argv[2], argv[3], SUB_REGISTER_OP,
                                     O_RDONLY);
     char *pipe_name = argv[2];
-
-    // registration request to be sent to mbroker
-    // registration_request_t req;
-
-    // initialize registration request
-    // if (registration_request_init(&req, SUB_REGISTER_OP, argv[2], argv[3]) !=
-    //     0) {
-    //     fprintf(stderr, REQUEST_INIT_ERR_MSG, SUB_REGISTER_OP);
-    //     exit(EXIT_FAILURE);
-    // }
-
-    // // create FIFO used to communicate with mbroker
-    // if (registration_request_mkfifo(&req) != 0) {
-    //     fprintf(stderr, PIPE_CREATE_ERR_MSG, req.pipe_name);
-    //     exit(EXIT_FAILURE);
-    // }
-
-    // // open writting pipe end
-    // int mbroker_fd = open(argv[1], O_WRONLY);
-    // // couldn't open pipe
-    // if (mbroker_fd == -1) {
-    //     fprintf(stderr, PIPE_OPEN_ERR_MSG, argv[1]);
-    //     exit_failure(-1, req.pipe_name);
-    // }
-
-    // // make request to mbroker
-    // if (registration_request_send(mbroker_fd, &req) != 0) {
-    //     fprintf(stderr, REQUEST_SEND_ERR_MSG, req.op_code);
-    //     exit_failure(mbroker_fd, req.pipe_name);
-    // }
-
-    // close(mbroker_fd);
-
-    // // open communication FIFO
-    // int sub_fd = open(req.pipe_name, O_RDONLY);
-    // // couldn't open pipe
-    // if (sub_fd == -1) {
-    //     fprintf(stderr, PIPE_OPEN_ERR_MSG, req.pipe_name);
-    //     exit_failure(-1, req.pipe_name);
-    // }
 
     subscriber_response_t sub_resp;
 

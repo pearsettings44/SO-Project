@@ -1,6 +1,7 @@
 #ifndef REQUESTS_H
 #define REQUESTS_H
 
+#include "requests.h"
 #include <stdint.h>
 
 /**

@@ -20,31 +20,53 @@
 box_t *mbroker_boxes;
 pthread_mutex_t mbroker_boxes_lock = PTHREAD_MUTEX_INITIALIZER;
 static int box_count;
+static volatile sig_atomic_t interrupt_var;
 
-void sigpipe_handler(int sig) {
-    (void)sig;
-    // closed pipes are handled by EPIPE return value
-    // this is used simply to overwrite default SIGPIPE behaviour
+/**
+ * Not specified in statement, but we end mbroker process by marking a flag on
+ * receiving a SIGINT
+ */
+void sigint_handler(int sig) {
+    if (sig == SIGINT) {
+        interrupt_var = 1;
+    }
 }
 
-// worked thread
+/**
+ * Used simply to overwrite default SIGPIPE handler that finishes the process
+ */
+void sigpipe_handler(int sig) {
+    (void)sig;
+    // closed pipes are handled by EPIPE return value on read function
+}
+
+/**
+ * Worker threads main function
+ */
 void *worker_thread_fn(void *queue) {
     while (1) {
-        // get request
+        // get a request from the queue
         registration_request_t *req = pcq_dequeue((pc_queue_t *)queue);
         // handle request
         int ret = requests_handler(req);
-        if (ret == -1) {
-            WARN("Request handler returned an error");
+        if (ret != 0) {
+            WARN(LOG_FAIL_HANDLER);
         }
-        // free memory associated
+        // free memory associated with request
         free(req);
     }
     return NULL;
 }
 
+/**
+ * Initialize mbroker
+ */
 int init_mbroker() {
+    // initialize tfs instance
     tfs_params params = tfs_default_params();
+    /**
+     * Ideally max open file entries should be a number close to max sessions
+     */
     params.max_inode_count = BOX_COUNT_MAX;
 
     if (tfs_init(&params) != 0) {
@@ -52,6 +74,13 @@ int init_mbroker() {
         return -1;
     }
 
+    // assign SIGINT handler
+    if (signal(SIGINT, sigint_handler) == SIG_ERR) {
+        PANIC(FATAL_SIGNAL_MSG);
+        return -1;
+    }
+
+    // assign SIGPIPE handler (just to overwrite default one)
     if (signal(SIGPIPE, sigpipe_handler) == SIG_ERR) {
         PANIC(FATAL_SIGNAL_MSG);
         return -1;
@@ -59,6 +88,7 @@ int init_mbroker() {
 
     mbroker_boxes = malloc(sizeof(box_t) * BOX_COUNT_MAX);
 
+    // initialize mutexes and conditional variables
     for (int i = 0; i < BOX_COUNT_MAX; ++i) {
         mbroker_boxes[i].alloc_state = NOT_USED;
         cond_init(&mbroker_boxes[i].condition);
@@ -68,6 +98,9 @@ int init_mbroker() {
     return 0;
 }
 
+/**
+ * Safely terminates mbroker's process
+ */
 int mbroker_destroy() {
     for (int i = 0; i < BOX_COUNT_MAX; ++i) {
         cond_destroy(&mbroker_boxes[i].condition);
@@ -95,6 +128,7 @@ int main(int argc, char **argv) {
         exit(EXIT_FAILURE);
     }
 
+    // initialize mbroker
     if (init_mbroker() != 0) {
         exit(EXIT_FAILURE);
     }
@@ -106,7 +140,7 @@ int main(int argc, char **argv) {
         exit(EXIT_FAILURE);
     }
 
-    // open pipe
+    // open registration pipe
     int mbroker_fd = open(argv[1], O_RDONLY);
     if (mbroker_fd == -1) {
         fprintf(stderr, PIPE_OPEN_ERR_MSG, argv[1]);
@@ -171,10 +205,22 @@ int main(int argc, char **argv) {
         if (ret == 0) {
             continue;
             // partial read or error reading
-        } else if (ret != sizeof(*req)) {
+        } else if (ret != sizeof(*req) && interrupt_var != 1) {
             fprintf(stderr, PIPE_PARTIAL_RW_ERR_MSG, argv[1]);
             continue;
         }
+
+        /**
+         * If proccess received SIGINT terminated. This is a simplification
+         * because proccess could get locked if we joined threads
+         */
+        if (interrupt_var == 1) {
+            if (unlink(argv[1]) != 0) {
+                fprintf(stderr, PIPE_DELETE_ERR_MSG, argv[1]);
+            };
+            exit(EXIT_SUCCESS);
+        }
+
         LOG(LOG_REQUEST);
         // add request to queue
         pcq_enqueue(&requests_queue, req);
@@ -182,7 +228,10 @@ int main(int argc, char **argv) {
 
     /**
      * Wait on all threads before exiting. No ending method was
-     * specified in the project paper, so we would simply wait
+     * specified in the project paper so this is never reached (althought this
+     * could possibly stay locked forever with current specification i.e
+     * a subscriber handler thread being stuck on a box conditional variable,
+     * thats why we exit on interrupt)
      */
     for (int i = 0; i < max_sessions; ++i) {
         if (pthread_join(tid[i], NULL) != 0) {
@@ -325,7 +374,7 @@ int handle_publisher(registration_request_t *req) {
     // close pipe
     close(publisher_fd);
 
-    INFO("Successfully finished handling publisher session");
+    INFO(LOG_SUCCESS_PUB);
     return 0;
 }
 
@@ -393,7 +442,7 @@ int handle_manager(registration_request_t *req) {
 
     close(manager_fd);
 
-    INFO("Sucessfully finished handling manager session");
+    INFO(LOG_SUCCESS_MANAGER);
     return 0;
 }
 
@@ -487,7 +536,7 @@ int handle_subscriber(registration_request_t *req) {
 
     mutex_unlock(&box->mutex);
 
-    INFO("Successfully finished handling subscriber session");
+    INFO(LOG_SUCCESS_SUB);
     return 0;
 }
 
@@ -526,7 +575,7 @@ int handle_list(registration_request_t *req) {
 
     close(manager_fd);
 
-    INFO("Successfully finished handling manager listing session");
+    INFO(LOG_SUCCESS_LIST);
     return 0;
 }
 

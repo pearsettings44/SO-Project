@@ -53,36 +53,6 @@ int create_delete_box(uint8_t op_code, char **args) {
     int manager_fd =
         connect_to_mbroker(args[1], args[2], args[4], op_code, O_RDONLY);
     char *pipe_name = args[2];
-    // registration_request_t req;
-
-    // if (registration_request_init(&req, op_code, args[2], args[4]) != 0) {
-    //     fprintf(stderr, REQUEST_INIT_ERR_MSG, op_code);
-    //     exit(EXIT_FAILURE);
-    // }
-
-    // if (registration_request_mkfifo(&req) != 0) {
-    //     fprintf(stderr, PIPE_CREATE_ERR_MSG, req.pipe_name);
-    //     exit(EXIT_FAILURE);
-    // }
-
-    // int mbroker_fd = open(args[1], O_WRONLY);
-    // if (mbroker_fd == -1) {
-    //     fprintf(stderr, PIPE_OPEN_ERR_MSG, args[1]);
-    //     exit(EXIT_FAILURE);
-    // }
-
-    // if (registration_request_send(mbroker_fd, &req) != 0) {
-    //     fprintf(stderr, REQUEST_SEND_ERR_MSG, req.op_code);
-    //     exit(EXIT_FAILURE);
-    // }
-
-    // close(mbroker_fd);
-
-    // int manager_fd = open(req.pipe_name, O_RDONLY);
-    // if (manager_fd == -1) {
-    //     fprintf(stderr, "manager: Failed opening pipe %s\n", req.pipe_name);
-    //     exit(EXIT_FAILURE);
-    // }
 
     manager_response_t resp;
 
@@ -112,42 +82,12 @@ int list_boxes(char **args) {
     int list_fd =
         connect_to_mbroker(args[1], args[2], NULL, LIST_BOX_OP, O_RDONLY);
     char *pipe_name = args[2];
-    // registration_request_t req;
 
-    // if (registration_request_init(&req, LIST_BOX_OP, args[2], NULL)) {
-    //     fprintf(stderr, "ERROR: Failed initializing request");
-    //     exit(EXIT_FAILURE);
-    // }
-
-    // if (registration_request_mkfifo(&req) != 0) {
-    //     fprintf(stderr, "ERROR: Failed creating FIFO %s\n", req.pipe_name);
-    //     exit(EXIT_FAILURE);
-    // }
-
-    // int mbroker_fd = open(args[1], O_WRONLY);
-    // if (mbroker_fd == -1) {
-    //     fprintf(stderr, "ERROR: Failed opening pipe %s\n", args[1]);
-    //     exit(EXIT_FAILURE);
-    // }
-
-    // if (registration_request_send(mbroker_fd, &req) != 0) {
-    //     fprintf(stderr, "ERROR: Failed making request to mbroker\n");
-    //     exit(EXIT_FAILURE);
-    // }
-
-    // // open communication FIFO
-    // int list_fd = open(req.pipe_name, O_RDONLY);
-    // if (list_fd == -1) {
-    //     fprintf(stderr, "ERROR: failed opening FIFO %s\n", args[2]);
-    //     if (unlink(args[2]) != 0) {
-    //         fprintf(stderr, "ERROR: failed deleting FIFO %s\n", args[2]);
-    //     }
-    //     exit(EXIT_FAILURE);
-    // }
-
+    // response expected from mbroker
     list_manager_response_t list_resp;
-    // array to store the received responses
+    // array used to store the received responses
     list_manager_response_t boxes[BOX_COUNT_MAX];
+    // count of boxes already received
     int box_count = 0;
     while (1) {
         ssize_t ret = read(list_fd, &list_resp, sizeof(list_resp));

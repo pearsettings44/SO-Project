@@ -21,6 +21,15 @@
 #define RESPONSE_SEND_ERR_MSG                                                  \
     "ERROR: Failed sending %d op_code response to client\n"
 
+/**
+ * Error messages passed in broker response to manager
+ */
+#define RESP_ERR_DUPLICATE_BOX "Box already exists\n"
+#define RESP_ERR_INIT_BOX "Couldn't initialize box %s\n"
+#define RESP_ERR_CREATE_BOX "Couldn't create box\n"
+#define RESP_ERR_UNKNOWN_BOX "Box doesn't exist\n"
+#define RESP_ERR_DELETE_BOX "Couldn't delete box\n"
+
 struct __attribute__((__packed__)) manager_response_t {
     uint8_t op_code;
     int32_t ret_code;

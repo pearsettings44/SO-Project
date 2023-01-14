@@ -30,6 +30,7 @@ int registration_request_init(registration_request_t *req, uint8_t op_code,
         if (strcpy(req->box_name, box_name) == NULL) {
             return -2;
         }
+        // truncate if necessary
         req->box_name[BOX_NAME_LENGTH - 1] = 0;
     }
 

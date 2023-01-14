@@ -41,8 +41,10 @@ int pcq_destroy(pc_queue_t *queue) {
 }
 
 int pcq_enqueue(pc_queue_t *queue, void *elem) {
+    // lock all pushers and size (eventually locking poppers)
     mutex_lock(&queue->pcq_pusher_condvar_lock);
     mutex_lock(&queue->pcq_current_size_lock);
+    // wait if buffer is full
     while (queue->pcq_current_size == queue->pcq_capacity) {
         mutex_unlock(&queue->pcq_current_size_lock);
         cond_wait(&queue->pcq_pusher_condvar, &queue->pcq_pusher_condvar_lock);

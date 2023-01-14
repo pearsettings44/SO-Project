@@ -2,6 +2,5 @@
 
 for i in {1..8}; do
   echo $i
-  sh -c "./subscriber/sub req ler$i a &"
+  sh -c "./publisher/pub req wr$i a &"
 done
-

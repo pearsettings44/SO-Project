@@ -37,47 +37,6 @@ int main(int argc, char **argv) {
     // name of FIFO used to communicate with mbroker;
     char *pipe_name = argv[2];
 
-    // registration request to be sent to mbroker
-    // registration_request_t req;
-
-    // // initialize registration request
-    // if (registration_request_init(&req, PUB_REGISTER_OP, argv[2], argv[3]) !=
-    //     0) {
-    //     fprintf(stderr, REQUEST_INIT_ERR_MSG, PUB_REGISTER_OP);
-    //     exit(EXIT_FAILURE);
-    // }
-
-    // // create FIFO used for communication with  mbroker
-    // if (registration_request_mkfifo(&req) != 0) {
-    //     fprintf(stderr, PIPE_CREATE_ERR_MSG , req.pipe_name);
-    //     exit(EXIT_FAILURE);
-    // }
-
-    // // open mbroker registration pipe
-    // int mbroker_fd = open(argv[1], O_WRONLY);
-    // // couldn't open pipe
-    // if (mbroker_fd == -1) {
-    //     fprintf(stderr, PIPE_OPEN_ERR_MSG, argv[1]);
-    //     exit_failure(-1, req.pipe_name);
-    // }
-
-    // // make request to mbroker
-    // if (registration_request_send(mbroker_fd, &req) != 0) {
-    //     fprintf(stderr, REQUEST_SEND_ERR_MSG, req.op_code);
-    //     exit_failure(mbroker_fd, req.pipe_name);
-    // }
-
-    // // close mbroker registration pipe
-    // close(mbroker_fd);
-
-    // // open communication FIFO
-    // int pub_fd = open(req.pipe_name, O_WRONLY);
-    // // couldn't open pipe
-    // if (pub_fd == -1) {
-    //     fprintf(stderr, PIPE_OPEN_ERR_MSG, req.pipe_name);
-    //     exit_failure(-1, req.pipe_name);
-    // }
-
     publisher_request_t p_req;
 
     char BUFFER[MESSAGE_LENGTH];
