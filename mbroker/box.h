@@ -6,11 +6,9 @@
 #include <stdint.h>
 #include <unistd.h>
 
-#define BOX_NAME 32
-
 typedef enum box_allocation_state_t { USED, NOT_USED } box_allocation_state_t;
 struct box_t {
-    char name[BOX_NAME];
+    char name[BOX_NAME_LENGTH];
     uint64_t n_publishers;
     uint64_t n_subscribers;
     size_t size;

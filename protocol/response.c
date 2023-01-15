@@ -10,6 +10,28 @@
 #include <unistd.h>
 
 /**
+ * Initializes a response meant to be sent from mbroker to a subscriber client.
+ */
+int subscriber_response_init(subscriber_response_t *resp, char *message) {
+    memset(resp, 0, sizeof(*resp));
+    resp->op_code = SUBSCRIBER_OP_CODE;
+
+    if (strcpy(resp->message, message) == NULL) {
+        return -1;
+    }
+
+    return 0;
+}
+
+/**
+ * Send a response to a subscriber client, uses publisher_request_send because
+ * both have the same policy
+ */
+int subscriber_response_send(int fd, subscriber_response_t *resp) {
+    return publisher_request_send(fd, resp);
+}
+
+/**
  * Initialize a response sent from mbroker to a manager client.
  * Must provide the OP_CODE of the response aswell as the return code and error
  * message (empty string if no error i.e ret_code = 0)
@@ -23,26 +45,6 @@ int manager_response_init(manager_response_t *resp, uint8_t op_code,
 
     if (message != NULL) {
         if (strcpy(resp->error_message, message) == NULL) {
-            return -1;
-        }
-    }
-
-    return 0;
-}
-
-int list_manager_response_init(list_manager_response_t *resp, uint8_t last_flag,
-                               char *box_name, uint64_t box_size,
-                               uint64_t n_publishers, uint64_t n_subscribers) {
-    memset(resp, 0, sizeof(*resp));
-
-    resp->op_code = LIST_MANAGER_OP;
-    resp->last_flag = last_flag;
-    resp->box_size = box_size;
-    resp->n_publishers = n_publishers;
-    resp->n_subscribers = n_subscribers;
-
-    if (box_name != NULL) {
-        if (strcpy(resp->box_name, box_name) == NULL) {
             return -1;
         }
     }
@@ -76,6 +78,26 @@ int manager_response_send(int fd, manager_response_t *resp) {
     return 0;
 }
 
+int list_manager_response_init(list_manager_response_t *resp, uint8_t last_flag,
+                               char *box_name, uint64_t box_size,
+                               uint64_t n_publishers, uint64_t n_subscribers) {
+    memset(resp, 0, sizeof(*resp));
+
+    resp->op_code = LIST_MANAGER_OP;
+    resp->last_flag = last_flag;
+    resp->box_size = box_size;
+    resp->n_publishers = n_publishers;
+    resp->n_subscribers = n_subscribers;
+
+    if (box_name != NULL) {
+        if (strcpy(resp->box_name, box_name) == NULL) {
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
 int list_manager_response_send(int fd, list_manager_response_t *resp) {
     ssize_t ret = write(fd, resp, sizeof(*resp));
 
@@ -87,26 +109,4 @@ int list_manager_response_send(int fd, list_manager_response_t *resp) {
     }
 
     return 0;
-}
-
-/**
- * Initializes a response meant to be sent from mbroker to a subscriber client.
- */
-int subscriber_response_init(subscriber_response_t *resp, char *message) {
-    memset(resp, 0, sizeof(*resp));
-    resp->op_code = SUBSCRIBER_OP_CODE;
-
-    if (strcpy(resp->message, message) == NULL) {
-        return -1;
-    }
-
-    return 0;
-}
-
-/**
- * Send a response to a subscriber client, uses publisher_request_send because
- * both have the same policy
- */
-int subscriber_response_send(int fd, subscriber_response_t *resp) {
-    return publisher_request_send(fd, resp);
 }

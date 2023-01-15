@@ -1,3 +1,4 @@
+#include "client.h"
 #include "logging.h"
 #include "mbroker.h"
 #include "requests.h"
@@ -48,43 +49,16 @@ int main(int argc, char **argv) {
 }
 
 int create_delete_box(uint8_t op_code, char **args) {
-    registration_request_t req;
 
-    if (registration_request_init(&req, op_code, args[2], args[4]) != 0) {
-        fprintf(stderr, "manager: Failed initializing request\n");
-        exit(EXIT_FAILURE);
-    }
-
-    if (registration_request_mkfifo(&req) != 0) {
-        fprintf(stderr, "manager: Failed creating FIFO %s\n", req.pipe_name);
-        exit(EXIT_FAILURE);
-    }
-
-    int mbroker_fd = open(args[1], O_WRONLY);
-    if (mbroker_fd == -1) {
-        fprintf(stderr, "manager: Failed opening pipe %s\n", args[1]);
-        exit(EXIT_FAILURE);
-    }
-
-    if (registration_request_send(mbroker_fd, &req) != 0) {
-        fprintf(stderr, "manager: Failed making request to mbroker\n");
-        exit(EXIT_FAILURE);
-    }
-
-    close(mbroker_fd);
-
-    int manager_fd = open(req.pipe_name, O_RDONLY);
-    if (manager_fd == -1) {
-        fprintf(stderr, "manager: Failed opening pipe %s\n", req.pipe_name);
-        exit(EXIT_FAILURE);
-    }
+    int manager_fd =
+        connect_to_mbroker(args[1], args[2], args[4], op_code, O_RDONLY);
+    char *pipe_name = args[2];
 
     manager_response_t resp;
 
     ssize_t ret = read(manager_fd, &resp, sizeof(resp));
     if (ret != sizeof(resp)) {
-        fprintf(stderr, "manager, Couldn't read or patial read from pipe %s\n",
-                req.pipe_name);
+        fprintf(stderr, PIPE_PARTIAL_RW_ERR_MSG, pipe_name);
         close(manager_fd);
         exit(EXIT_FAILURE);
     }
@@ -96,8 +70,8 @@ int create_delete_box(uint8_t op_code, char **args) {
     }
 
     close(manager_fd);
-    if (unlink(req.pipe_name) != 0) {
-        fprintf(stderr, "ERROR: failed to delete FIFO %s\n", req.pipe_name);
+    if (unlink(pipe_name) != 0) {
+        fprintf(stderr, PIPE_DELETE_ERR_MSG, pipe_name);
         exit(EXIT_FAILURE);
     }
 
@@ -105,42 +79,15 @@ int create_delete_box(uint8_t op_code, char **args) {
 }
 
 int list_boxes(char **args) {
-    registration_request_t req;
+    int list_fd =
+        connect_to_mbroker(args[1], args[2], NULL, LIST_BOX_OP, O_RDONLY);
+    char *pipe_name = args[2];
 
-    if (registration_request_init(&req, LIST_BOX_OP, args[2], NULL)) {
-        fprintf(stderr, "ERROR: Failed initializing request");
-        exit(EXIT_FAILURE);
-    }
-
-    if (registration_request_mkfifo(&req) != 0) {
-        fprintf(stderr, "ERROR: Failed creating FIFO %s\n", req.pipe_name);
-        exit(EXIT_FAILURE);
-    }
-
-    int mbroker_fd = open(args[1], O_WRONLY);
-    if (mbroker_fd == -1) {
-        fprintf(stderr, "ERROR: Failed opening pipe %s\n", args[1]);
-        exit(EXIT_FAILURE);
-    }
-
-    if (registration_request_send(mbroker_fd, &req) != 0) {
-        fprintf(stderr, "ERROR: Failed making request to mbroker\n");
-        exit(EXIT_FAILURE);
-    }
-
-    // open communication FIFO
-    int list_fd = open(req.pipe_name, O_RDONLY);
-    if (list_fd == -1) {
-        fprintf(stderr, "ERROR: failed opening FIFO %s\n", args[2]);
-        if (unlink(args[2]) != 0) {
-            fprintf(stderr, "ERROR: failed deleting FIFO %s\n", args[2]);
-        }
-        exit(EXIT_FAILURE);
-    }
-
+    // response expected from mbroker
     list_manager_response_t list_resp;
-    // array to store the received responses
+    // array used to store the received responses
     list_manager_response_t boxes[BOX_COUNT_MAX];
+    // count of boxes already received
     int box_count = 0;
     while (1) {
         ssize_t ret = read(list_fd, &list_resp, sizeof(list_resp));
@@ -149,7 +96,7 @@ int list_boxes(char **args) {
             fprintf(stdout, "NO BOXES FOUND\n");
             break;
         } else if (ret != sizeof(list_resp)) {
-            fprintf(stderr, "ERROR: couldn't read response from pipe\n");
+            fprintf(stderr, PIPE_CREATE_ERR_MSG, pipe_name);
             break;
         }
 
@@ -167,15 +114,14 @@ int list_boxes(char **args) {
     qsort(boxes, (size_t)box_count, sizeof(list_manager_response_t), cmpstr);
 
     for (int i = 0; i < box_count; i++) {
-        // list_manager_response_t box = boxes[i];
         fprintf(stdout, "%s %zu %zu %zu\n", boxes[i].box_name + 1,
                 boxes[i].box_size, boxes[i].n_publishers,
                 boxes[i].n_subscribers);
     }
 
     close(list_fd);
-    if (unlink(req.pipe_name) != 0) {
-        fprintf(stderr, "ERROR: failed to delete FIFO %s\n", req.pipe_name);
+    if (unlink(pipe_name) != 0) {
+        fprintf(stderr, PIPE_DELETE_ERR_MSG, pipe_name);
         exit(EXIT_FAILURE);
     }
 

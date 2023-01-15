@@ -19,8 +19,6 @@ int box_initialize(box_t *box, char *name) {
     tmp[0] = '/';
     tmp[1] = 0;
     strcat(tmp, name);
-    // truncate if necessary
-    tmp[len + 1] = 0;
 
     if (strcpy(box->name, tmp) == NULL) {
         return -1;
@@ -42,7 +40,7 @@ int box_initialize(box_t *box, char *name) {
 int create_box(manager_response_t *resp, char *name) {
     // check if box exists
     if (get_box(name) != NULL) {
-        manager_response_set_error_msg(resp, "Box already exists\n");
+        manager_response_set_error_msg(resp, RESP_ERR_DUPLICATE_BOX);
         return -1;
     }
 
@@ -50,14 +48,14 @@ int create_box(manager_response_t *resp, char *name) {
     box_t new_box;
 
     if (box_initialize(&new_box, name) != 0) {
-        manager_response_set_error_msg(resp, "Couldn't initialize box\n");
+        manager_response_set_error_msg(resp, RESP_ERR_INIT_BOX);
         return -1;
     }
 
     // create new file in TFS
     int fd = tfs_open(new_box.name, TFS_O_CREAT);
     if (fd == -1) {
-        manager_response_set_error_msg(resp, "Error creating box (TFS)\n");
+        manager_response_set_error_msg(resp, RESP_ERR_CREATE_BOX);
         tfs_close(fd);
         return -1;
     }
@@ -94,14 +92,14 @@ int create_box(manager_response_t *resp, char *name) {
 int delete_box(manager_response_t *resp, char *name) {
     box_t *box = get_box(name);
     if (box == NULL) {
-        manager_response_set_error_msg(resp, "Box doesn't exist\n");
+        manager_response_set_error_msg(resp, RESP_ERR_UNKNOWN_BOX);
         return -1;
     }
 
     mutex_lock(&box->mutex);
 
     if (tfs_unlink(box->name) != 0) {
-        manager_response_set_error_msg(resp, "Couldn't delete box (TFS)\n");
+        manager_response_set_error_msg(resp, RESP_ERR_DELETE_BOX);
         return -1;
     }
 

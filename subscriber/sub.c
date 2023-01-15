@@ -8,11 +8,13 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include "client.h"
 #include "logging.h"
 #include "requests.h"
 #include "response.h"
 
-static int interrupt_var;
+// flag that will signal main loop of interruption
+static volatile sig_atomic_t interrupt_var;
 
 /**
  * Simply signal the main loop that the event has occurred. As an alternative
@@ -33,58 +35,13 @@ int main(int argc, char **argv) {
 
     // assign SIGTERM handler
     if (signal(SIGINT, sigint_handler) == SIG_ERR) {
-        fprintf(stderr, "ERR Failed to assign SIGINT signal handler\n");
+        fprintf(stderr, SIGNAL_ERR_MSG, "SIGINT");
         exit(EXIT_FAILURE);
     }
 
-    // request to be sent to mbroker
-    registration_request_t req;
-
-    // initialize registration request
-    if (registration_request_init(&req, SUB_REGISTER_OP, argv[2], argv[3]) !=
-        0) {
-        fprintf(stderr,
-                "ERR Failed initializing subscriber request to mbroker\n");
-        exit(EXIT_FAILURE);
-    }
-
-    // create FIFO used to communicate with mbroker
-    if (registration_request_mkfifo(&req) != 0) {
-        fprintf(stderr, "ERR failed creating FIFO %s\n", req.pipe_name);
-        exit(EXIT_FAILURE);
-    }
-
-    // open writting pipe end
-    int mbroker_fd = open(argv[1], O_WRONLY);
-    if (mbroker_fd == -1) {
-        fprintf(stderr, "ERR failed opening FIFO %s\n", argv[1]);
-        if (unlink(argv[2]) != 0) {
-            fprintf(stderr, "ERR failed deleting FIFO %s", argv[2]);
-        }
-        exit(EXIT_FAILURE);
-    }
-
-    // make request to mbroker
-    if (registration_request_send(mbroker_fd, &req) != 0) {
-        fprintf(stderr, "ERR failed registering subscriber\n");
-        close(mbroker_fd);
-        if (unlink(argv[2]) != 0) {
-            fprintf(stderr, "ERR failed deleting FIFO %s", argv[2]);
-        }
-        exit(EXIT_FAILURE);
-    }
-
-    close(mbroker_fd);
-
-    // open communication FIFO
-    int sub_fd = open(req.pipe_name, O_RDONLY);
-    if (sub_fd == -1) {
-        fprintf(stderr, "ERR failed opening FIFO %s\n", argv[2]);
-        if (unlink(argv[2]) != 0) {
-            fprintf(stderr, "ERR failed deleting FIFO %s\n", argv[2]);
-        }
-        exit(EXIT_FAILURE);
-    }
+    int sub_fd = connect_to_mbroker(argv[1], argv[2], argv[3], SUB_REGISTER_OP,
+                                    O_RDONLY);
+    char *pipe_name = argv[2];
 
     subscriber_response_t sub_resp;
 
@@ -97,16 +54,15 @@ int main(int argc, char **argv) {
          * a cycle for it to be detected
          */
         if (ret == 0) {
-            fprintf(stderr,
-                    "ERR pipe was closed by mbroker, operation was invalid\n");
+            fprintf(stderr, INVALID_OP_ERR_MSG);
             break;
         } else if (ret != sizeof(sub_resp) && interrupt_var != 1) {
-            fprintf(stderr, "ERR couldn't read response from pipe\n");
-            break;
+            fprintf(stderr, PIPE_PARTIAL_RW_ERR_MSG, pipe_name);
+            exit_failure(sub_fd, pipe_name);
         }
         // if SIGTERM was received
         if (interrupt_var == 1) {
-            fprintf(stdout, "\nSIGINT received, terminating\n");
+            fprintf(stdout, SIGINT_MSG);
             break;
         }
         // print message received from mbroker
@@ -116,10 +72,11 @@ int main(int argc, char **argv) {
 
     // print number of read messages
     fprintf(stdout, "%d\n", nr_messages);
+
     // cleanup
     close(sub_fd);
-    if (unlink(argv[2]) != 0) {
-        fprintf(stderr, "ERR failed deleting FIFO %s\n", argv[2]);
+    if (unlink(pipe_name) != 0) {
+        fprintf(stderr, PIPE_DELETE_ERR_MSG, pipe_name);
         exit(EXIT_FAILURE);
     }
 
