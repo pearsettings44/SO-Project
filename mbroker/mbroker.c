@@ -379,74 +379,6 @@ int handle_publisher(registration_request_t *req) {
 }
 
 /**
- * Handle a manager session to create or delete boxes and responds back to the
- * client.
- *
- * Response to the manager client will be sent over the pipe.
- * Possible error messages are:
- * - Box already exists if trying to create a duplicate one
- * - Box doesn't exist if trying to delete a non existing box
- *
- * All other possible errors are not in the scope of the project
- */
-int handle_manager(registration_request_t *req) {
-    INFO(LOG_MAN_HANDLER)
-    // open pipe
-    int manager_fd = open(req->pipe_name, O_WRONLY);
-    // if pipe opening failed
-    if (manager_fd == -1) {
-        fprintf(stderr, PIPE_OPEN_ERR_MSG, req->pipe_name);
-        return -1;
-    }
-
-    /**
-     * Response to be sent to the client.
-     *
-     * Response format:
-     * [ op_code (uint8_t) | return_code (uint32_t) | error_message(char[1024])
-     * ]
-     *
-     * op_code = 4 if box creation || op_code = 6 if box deletion
-     */
-    manager_response_t resp;
-
-    // initialize response struct
-    if (manager_response_init(&resp, req->op_code + 1, 0, NULL) != 0) {
-        fprintf(stderr, RESPONSE_INIT_ERR_MSG, req->op_code + 1);
-        close(manager_fd);
-        return -1;
-    }
-
-    switch (req->op_code) {
-    case CREATE_BOX_OP:
-        resp.ret_code = create_box(&resp, req->box_name);
-        if (resp.ret_code == 0) {
-            box_count++;
-        }
-        break;
-    case DELETE_BOX_OP:
-        resp.ret_code = delete_box(&resp, req->box_name);
-        if (resp.ret_code == 0) {
-            box_count--;
-        }
-        break;
-    default:
-        break;
-    }
-
-    // send response to the client
-    if (manager_response_send(manager_fd, &resp) != 0) {
-        fprintf(stderr, RESPONSE_SEND_ERR_MSG, req->op_code + 1);
-        return -1;
-    }
-
-    close(manager_fd);
-
-    INFO(LOG_SUCCESS_MANAGER);
-    return 0;
-}
-
-/**
  * Ran by thread that will handle a subscriber session
  *
  * If specified box doesn't exist, the pipe will be closed
@@ -537,6 +469,74 @@ int handle_subscriber(registration_request_t *req) {
     mutex_unlock(&box->mutex);
 
     INFO(LOG_SUCCESS_SUB);
+    return 0;
+}
+
+/**
+ * Handle a manager session to create or delete boxes and responds back to the
+ * client.
+ *
+ * Response to the manager client will be sent over the pipe.
+ * Possible error messages are:
+ * - Box already exists if trying to create a duplicate one
+ * - Box doesn't exist if trying to delete a non existing box
+ *
+ * All other possible errors are not in the scope of the project
+ */
+int handle_manager(registration_request_t *req) {
+    INFO(LOG_MAN_HANDLER)
+    // open pipe
+    int manager_fd = open(req->pipe_name, O_WRONLY);
+    // if pipe opening failed
+    if (manager_fd == -1) {
+        fprintf(stderr, PIPE_OPEN_ERR_MSG, req->pipe_name);
+        return -1;
+    }
+
+    /**
+     * Response to be sent to the client.
+     *
+     * Response format:
+     * [ op_code (uint8_t) | return_code (uint32_t) | error_message(char[1024])
+     * ]
+     *
+     * op_code = 4 if box creation || op_code = 6 if box deletion
+     */
+    manager_response_t resp;
+
+    // initialize response struct
+    if (manager_response_init(&resp, req->op_code + 1, 0, NULL) != 0) {
+        fprintf(stderr, RESPONSE_INIT_ERR_MSG, req->op_code + 1);
+        close(manager_fd);
+        return -1;
+    }
+
+    switch (req->op_code) {
+    case CREATE_BOX_OP:
+        resp.ret_code = create_box(&resp, req->box_name);
+        if (resp.ret_code == 0) {
+            box_count++;
+        }
+        break;
+    case DELETE_BOX_OP:
+        resp.ret_code = delete_box(&resp, req->box_name);
+        if (resp.ret_code == 0) {
+            box_count--;
+        }
+        break;
+    default:
+        break;
+    }
+
+    // send response to the client
+    if (manager_response_send(manager_fd, &resp) != 0) {
+        fprintf(stderr, RESPONSE_SEND_ERR_MSG, req->op_code + 1);
+        return -1;
+    }
+
+    close(manager_fd);
+
+    INFO(LOG_SUCCESS_MANAGER);
     return 0;
 }
 
