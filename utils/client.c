@@ -8,11 +8,11 @@
 /**
  * Connect client to mbroker. Returns FD that allows for communication.
  *
- * A fifo with PIPE_NAME will be created and opened with COMM_FLAGS for
- * communication with mbroker. A registration request with OP_CODE code will be
- * made to mbroker using fifo BROKER_PIPE
+ * A FIFO with PIPE_NAME will be created and opened with COMM_FLAGS for
+ * communication. A registration request with OP_CODE code will be
+ * made to mbroker using FIFO BROKER_PIPE to begin communication.
  *
- * If unsucessful, the process will exit
+ * Upon failure the proccess will terminate
  */
 int connect_to_mbroker(char *broker_pipe, char *pipe_name, char *box_name,
                        uint8_t op_code, int comm_flags) {
@@ -60,7 +60,8 @@ int connect_to_mbroker(char *broker_pipe, char *pipe_name, char *box_name,
 }
 /**
  * End client session when it fails to connect to mbroker. Closes currently
- * opened pipe and removes FIFO used for communication with mbroker.
+ * opened connection in PUB_FD and removes FIFO PIPE_NAME used for communication
+ * with mbroker.
  */
 void exit_failure(int pub_fd, char *pipe_name) {
     if (pub_fd != -1) {

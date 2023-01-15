@@ -35,10 +35,7 @@ void sigint_handler(int sig) {
 /**
  * Used simply to overwrite default SIGPIPE handler that finishes the process
  */
-void sigpipe_handler(int sig) {
-    (void)sig;
-    // closed pipes are handled by EPIPE return value on read function
-}
+void sigpipe_handler(int sig) { (void)sig; }
 
 /**
  * Worker threads main function
@@ -271,9 +268,9 @@ int requests_handler(registration_request_t *req) {
 }
 
 /**
- * Ran by thread that handles a publisher connection.
- * If there is an issue with the specified box the pipe will be closed prompting
- * a SIGPIPE on the client side.
+ * Handle a publisher session.
+ * If there is an issue with the specified request the communication pipe will
+ * be closed.
  *
  * Possible issues:
  * - Box doesn't exist
@@ -374,9 +371,12 @@ int handle_publisher(registration_request_t *req) {
 }
 
 /**
- * Ran by thread that will handle a subscriber session
+ * Handle a subscriber session.
+ * If there is an issue with the specified request the communication pipe will
+ * be closed.
  *
- * If specified box doesn't exist, the pipe will be closed
+ * Possible issues:
+ * - Box doesn't exist
  */
 int handle_subscriber(registration_request_t *req) {
     INFO(LOG_SUB_HANDLER)
@@ -468,8 +468,7 @@ int handle_subscriber(registration_request_t *req) {
 }
 
 /**
- * Handle a manager session to create or delete boxes and responds back to the
- * client.
+ * Handle a manager session to create or delete boxes.
  *
  * Response to the manager client will be sent over the pipe.
  * Possible error messages are:
@@ -535,6 +534,12 @@ int handle_manager(registration_request_t *req) {
     return 0;
 }
 
+/**
+ * Handle a manager sessions requesting listing of boxes.
+ * Will send a response to the client for each box in the broker.
+ * If no boxes exist the pipe will simply be closed without any activity, which
+ * the client will acknowledge as there not being any boxes.
+ */
 int handle_list(registration_request_t *req) {
     INFO(LOG_LIST_HANDLER);
     int manager_fd = open(req->pipe_name, O_WRONLY);
@@ -543,30 +548,39 @@ int handle_list(registration_request_t *req) {
         return -1;
     }
 
+    // must lock boxes strcture so changes don't occure mid operation
+    mutex_lock(get_mbroker_boxes_lock());
     // iterate through boxes and send them to the manager
     int j = 0;
     for (int i = 0; i < BOX_COUNT_MAX; i++) {
         if (j == box_count) {
             break;
         }
+        // if box is valid
         if (mbroker_boxes[i].alloc_state == USED) {
+            // last_flag = last box ? 1 : 0
             j++;
-            list_manager_response_t resp;
-            box_t box = mbroker_boxes[i];
             uint8_t last = (j == box_count) ? 1 : 0;
-            if (list_manager_response_init(&resp, last, box.name, box.size,
-                                           box.n_publishers,
-                                           box.n_subscribers) != 0) {
+
+            // initialize response for current box
+            mutex_lock(&mbroker_boxes[i].mutex);
+            list_manager_response_t resp;
+            if (list_manager_response_init(
+                    &resp, last, mbroker_boxes[i].name, mbroker_boxes[i].size,
+                    mbroker_boxes[i].n_publishers,
+                    mbroker_boxes[i].n_subscribers) != 0) {
                 fprintf(stderr, RESPONSE_INIT_ERR_MSG, LIST_MANAGER_OP);
                 break;
             }
-
+            mutex_unlock(&mbroker_boxes[i].mutex);
+            // send response about current box
             if (list_manager_response_send(manager_fd, &resp) != 0) {
                 fprintf(stderr, RESPONSE_SEND_ERR_MSG, LIST_MANAGER_OP);
                 break;
             }
         }
     }
+    mutex_unlock(get_mbroker_boxes_lock());
 
     close(manager_fd);
 
@@ -575,7 +589,7 @@ int handle_list(registration_request_t *req) {
 }
 
 /**
- * Return an mbroker's box with given string
+ * Get ref to box with given NAME.
  *
  */
 box_t *get_box(char *name) {
@@ -591,9 +605,7 @@ box_t *get_box(char *name) {
 }
 
 /**
- * Return the array storing all mbroker's boxes
- *
- * Declared so box.c has access to the data
+ * Get a ref to all mbroker's boxes
  */
 box_t *get_mbroker_boxes_ref() { return mbroker_boxes; }
 

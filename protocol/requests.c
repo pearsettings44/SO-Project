@@ -15,6 +15,9 @@
 
 /**
  * Initializes a registration request to be made to mbroker from the clients.
+ * Takes the OP_CODE of the request, the PIPE_NAME of the client and the
+ * BOX_NAME solicited to mbroker (NULL if none) Returns 0 on success and -1 upon
+ * failure
  */
 int registration_request_init(registration_request_t *req, uint8_t op_code,
                               char *pipe_name, char *box_name) {
@@ -28,7 +31,7 @@ int registration_request_init(registration_request_t *req, uint8_t op_code,
 
     if (box_name != NULL) {
         if (strcpy(req->box_name, box_name) == NULL) {
-            return -2;
+            return -1;
         }
         // truncate if necessary
         req->box_name[BOX_NAME_LENGTH - 1] = 0;
@@ -45,7 +48,7 @@ int registration_request_init(registration_request_t *req, uint8_t op_code,
  *
  * Returns 0 upon success and negative values upon failure
  *
- * Error returns:
+ * Return error values:
  *  -1 if failed to write to FIFO
  *  -2 if partial write
  */
@@ -88,13 +91,12 @@ int publisher_request_init(publisher_request_t *req, char *message) {
 }
 
 /**
- * Sends a publisher request to mbroker using fd o mbroker's FIFO
- *
- * Returns 0 upon success and negative values upon failure
+ * Sends a publisher request to mbroker though FIFO opened with FD.
+ * Returns 0 on success and negative values on failure
  *
  * Error returns:
  *  -1 if EPIPE error (closed reading END pipe)
- *  -2 if other fail occurred writting to FIFO
+ *  -2 if other failures writting to FIFO
  *  -3 if partial write
  */
 int publisher_request_send(int fd, publisher_request_t *req) {

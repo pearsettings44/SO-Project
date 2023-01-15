@@ -1,3 +1,7 @@
+/**
+ * Box structure functions
+ */
+
 #include "box.h"
 #include "mbroker.h"
 #include "operations.h"
@@ -6,9 +10,9 @@
 #include <string.h>
 
 /**
- * Initializes a box structure managed by mbroker.
+ * Initializes a box structure managed by mbroker with given NAME.
  *
- * Receives box name as parameter
+ * Returns 0 on success and -1 on failure
  */
 int box_initialize(box_t *box, char *name) {
     memset(box, 0, sizeof(*box));
@@ -24,18 +28,17 @@ int box_initialize(box_t *box, char *name) {
         return -1;
     }
 
+    // mark box as used
     box->alloc_state = USED;
 
     return 0;
 }
 
 /**
- * Creates a box in mbroker if it doesn't already exist.
- * Box is added to mbroker_boxes
+ * Creates a box in mbroker with given NAME if it doesn't already exist.
+ * Writes result of operation to given RESP object.
  *
- * Writes result of operation to given response object
- *
- * Returns 0 if successful and -1 if failed
+ * Returns 0 on success and -1 on failure
  */
 int create_box(manager_response_t *resp, char *name) {
     // check if box exists
@@ -44,9 +47,9 @@ int create_box(manager_response_t *resp, char *name) {
         return -1;
     }
 
-    // name = boxx
     box_t new_box;
 
+    // initialize structure
     if (box_initialize(&new_box, name) != 0) {
         manager_response_set_error_msg(resp, RESP_ERR_INIT_BOX);
         return -1;
@@ -63,6 +66,7 @@ int create_box(manager_response_t *resp, char *name) {
     tfs_close(fd);
 
     box_t *boxes = get_mbroker_boxes_ref();
+    // lock mbroker boxes internal storage structure
     mutex_lock(get_mbroker_boxes_lock());
     /**
      * Allocate space for the box, this should never fail because it relies on
@@ -76,18 +80,18 @@ int create_box(manager_response_t *resp, char *name) {
         }
     }
 
+    // unlock mbroker boxes internal storage structure
     mutex_unlock(get_mbroker_boxes_lock());
 
     return 0;
 }
 
 /**
- * Deletes a box in mbroker with given name. Box is removed from mbroker_boxes
+ * Deletes a box in mbroker with given NAME. Box is removed from mbroker_boxes
  * if it exists.
+ * Writes result of operation to given RESP
  *
- * Writes result of operation to given response object
- *
- * Returns 0 if successful and a negativa value if failed
+ * Returns 0 on success and a -1 on failure
  */
 int delete_box(manager_response_t *resp, char *name) {
     box_t *box = get_box(name);
@@ -96,10 +100,12 @@ int delete_box(manager_response_t *resp, char *name) {
         return -1;
     }
 
+    // lock box mutex
     mutex_lock(&box->mutex);
 
     if (tfs_unlink(box->name) != 0) {
         manager_response_set_error_msg(resp, RESP_ERR_DELETE_BOX);
+        mutex_unlock(&box->mutex);
         return -1;
     }
 
@@ -113,7 +119,7 @@ int delete_box(manager_response_t *resp, char *name) {
 }
 
 /**
- * Writes a message to box opened with fd
+ * Writes MESSAGE to box opened with FD.
  */
 ssize_t write_message(int fd, char *message) {
     size_t len = strlen(message);
@@ -132,7 +138,7 @@ ssize_t write_message(int fd, char *message) {
 }
 
 /**
- * Reads a message from a box opened with fd, saves it to buffer
+ * Reads a message from a box opened with FD and saves it to BUFFER.
  */
 ssize_t read_message(int fd, char *buffer) {
     int i = 0;
