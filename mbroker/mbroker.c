@@ -253,26 +253,21 @@ int main(int argc, char **argv) {
 int requests_handler(registration_request_t *req) {
     switch (req->op_code) {
     case 1:
-        handle_publisher(req);
-        break;
+        return handle_publisher(req);
     case 2:
-        handle_subscriber(req);
-        break;
+        return handle_subscriber(req);
     case 3:
-        handle_manager(req);
-        break;
+        return handle_manager(req);
     case 5:
-        handle_manager(req);
-        break;
+        return handle_manager(req);
     case 7:
-        handle_list(req);
-        break;
+        return handle_list(req);
     default:
         LOG(LOG_UNKNOWN_REQUEST, req->op_code);
         break;
     }
 
-    return 0;
+    return -1;
 }
 
 /**
