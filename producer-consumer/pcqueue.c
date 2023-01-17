@@ -5,7 +5,7 @@
 #include <stdlib.h>
 
 int pcq_create(pc_queue_t *queue, size_t capacity) {
-    queue->pcq_buffer = malloc(sizeof(registration_request_t *) * capacity);
+    queue->pcq_buffer = malloc(sizeof(void *) * capacity);
     if (queue->pcq_buffer == NULL) {
         return -1;
     }
